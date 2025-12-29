@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
+import { SignInButton, SignOutButton, useUser } from "@clerk/nextjs";
 import {
     IconPlus,
     IconTrendingUp,
@@ -39,9 +40,9 @@ import {
     AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Tooltip } from "@/components/ui/tooltip";
-import { useTransactions } from "@/hooks/use-transactions";
+import { useTransactions, Transaction } from "@/hooks/use-transactions";
 import {
-    Transaction,
+    Category,
     CurrencyType,
     FilterPeriod,
     formatCurrency,
@@ -515,7 +516,7 @@ export default function MoneyDrain() {
                                                 <SelectValue placeholder="Category" />
                                             </SelectTrigger>
                                             <SelectContent>
-                                                {getCategories(formData.type).map((category) => (
+                                                {getCategories(formData.type).map((category: Category) => (
                                                     <SelectItem key={category.id} value={category.id}>
                                                         <span className="flex items-center gap-2">
                                                             <span>{category.icon}</span>
@@ -591,9 +592,9 @@ export default function MoneyDrain() {
                                                     type="button"
                                                     size="sm"
                                                     className="flex-1"
-                                                    onClick={() => {
+                                                    onClick={async () => {
                                                         if (newCategoryName.trim()) {
-                                                            const cat = addCustomCategory(formData.type, {
+                                                            const cat = await addCustomCategory(formData.type, {
                                                                 name: newCategoryName.trim(),
                                                                 icon: newCategoryIcon || "📌",
                                                                 color: "oklch(0.55 0.15 200)",
@@ -709,7 +710,7 @@ export default function MoneyDrain() {
                                                 size="sm"
                                                 onClick={() => {
                                                     const headers = ["Date", "Description", "Category", "Type", "Amount"];
-                                                    const rows = transactions.map(t => [
+                                                    const rows = transactions.map((t: Transaction) => [
                                                         new Date(t.date).toLocaleDateString(),
                                                         t.description,
                                                         t.category,
@@ -801,6 +802,9 @@ export default function MoneyDrain() {
                             )}
                         </CardContent>
                     </Card>
+
+                    {/* Auth Button */}
+                    <AuthButton />
                 </div>
             </div>
         </>
@@ -872,5 +876,49 @@ function TransactionItem({
                 </AlertDialog>
             </div>
         </div>
+    );
+}
+
+function AuthButton() {
+    const { isSignedIn, user } = useUser();
+
+    if (isSignedIn) {
+        return (
+            <Card className="bg-card/60">
+                <CardContent className="p-3">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <div className="size-8 rounded-full bg-primary/10 flex items-center justify-center text-sm">
+                                {user?.firstName?.[0] || user?.emailAddresses?.[0]?.emailAddress?.[0] || "U"}
+                            </div>
+                            <div className="text-xs">
+                                <p className="font-medium">{user?.firstName || "User"}</p>
+                                <p className="text-muted-foreground text-[10px]">{user?.emailAddresses?.[0]?.emailAddress}</p>
+                            </div>
+                        </div>
+                        <SignOutButton>
+                            <Button variant="outline" size="sm">
+                                Sign Out
+                            </Button>
+                        </SignOutButton>
+                    </div>
+                </CardContent>
+            </Card>
+        );
+    }
+
+    return (
+        <Card className="bg-card/60">
+            <CardContent className="p-3">
+                <div className="flex items-center justify-between">
+                    <p className="text-xs text-muted-foreground">Sign in to sync your data</p>
+                    <SignInButton mode="modal">
+                        <Button variant="default" size="sm">
+                            Sign In
+                        </Button>
+                    </SignInButton>
+                </div>
+            </CardContent>
+        </Card>
     );
 }
