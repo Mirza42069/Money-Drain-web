@@ -12,6 +12,7 @@ import {
     IconArrowDown,
     IconClock,
     IconCoin,
+    IconBuildingBank,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -40,7 +41,6 @@ import {
     Transaction,
     CurrencyType,
     FilterPeriod,
-    defaultCategories,
     formatCurrency,
     formatDate,
     filterTransactionsByPeriod,
@@ -64,7 +64,39 @@ const periodLabels: Record<FilterPeriod, string> = {
     year: "1Y",
 };
 
+// Icon options for custom categories
+const iconOptions = [
+    "📌", "🎯", "💼", "📱", "🎮", "🎵", "📚", "✈️", "🏠", "🚀",
+    "💎", "🎁", "🏋️", "🎨", "🍿", "☕", "🍺", "🎭", "🎪", "🎲",
+    "🛒", "💊", "🎓", "👔", "👗", "👶", "🐕", "🌱", "⚡", "💡",
+];
+
+// Helper to get date label for grouping transactions
+const getDateLabel = (dateString: string): string => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const transactionDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+    if (transactionDate.getTime() === today.getTime()) {
+        return "Today";
+    } else if (transactionDate.getTime() === yesterday.getTime()) {
+        return "Yesterday";
+    } else {
+        return date.toLocaleDateString("en-US", {
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+        });
+    }
+};
+
 export default function MoneyDrain() {
+    const [mounted, setMounted] = useState(false);
+    const [selectedAccount, setSelectedAccount] = useState<1 | 2 | 3>(1);
+
     const {
         transactions,
         isLoading,
@@ -72,9 +104,15 @@ export default function MoneyDrain() {
         deleteTransaction,
         updateTransaction,
         convertAllTransactions,
-    } = useTransactions();
+        clearAllTransactions,
+        getCategories,
+        addCustomCategory,
+        balance: totalBalance,
+        income: totalIncome,
+        expenses: totalExpenses,
+        expensesByCategory: allExpensesByCategory,
+    } = useTransactions(selectedAccount);
 
-    const [mounted, setMounted] = useState(false);
     const [showAddForm, setShowAddForm] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [currency, setCurrency] = useState<CurrencyType>("IDR");
@@ -87,11 +125,15 @@ export default function MoneyDrain() {
         type: "expense" as "income" | "expense",
         category: "other",
     });
+    const [showAddCategory, setShowAddCategory] = useState(false);
+    const [newCategoryName, setNewCategoryName] = useState("");
+    const [newCategoryIcon, setNewCategoryIcon] = useState("📌");
 
     // Fix hydration - only render dynamic content after mount
     useEffect(() => {
         setMounted(true);
     }, []);
+
 
     // Load saved preferences from localStorage (only on client)
     useEffect(() => {
@@ -244,10 +286,12 @@ export default function MoneyDrain() {
         setShowAddForm(true);
     };
 
-    const getCategoryInfo = (categoryId: string) => {
+    const getCategoryInfo = (categoryId: string, type: "expense" | "income" = "expense") => {
+        const categories = getCategories(type);
+        const allCategories = [...getCategories("expense"), ...getCategories("income")];
         return (
-            defaultCategories.find((c) => c.id === categoryId) ||
-            defaultCategories.find((c) => c.id === "other")!
+            allCategories.find((c) => c.id === categoryId) ||
+            { id: "other", name: "Other", icon: "📦", color: "oklch(0.55 0 0)" }
         );
     };
 
@@ -267,17 +311,17 @@ export default function MoneyDrain() {
                     <AlertDialogHeader>
                         <AlertDialogTitle>Convert Currency?</AlertDialogTitle>
                         <AlertDialogDescription className="space-y-2">
-                            <p>
+                            <span className="block">
                                 Change from {currencyLabels[currency]} to {pendingCurrency ? currencyLabels[pendingCurrency] : ""}?
-                            </p>
+                            </span>
                             {pendingCurrency && (
-                                <p className="text-xs text-muted-foreground">
+                                <span className="block text-xs text-muted-foreground">
                                     Rate: {formatCurrency(1, currency)} = {formatCurrency(convertCurrency(1, currency, pendingCurrency), pendingCurrency)}
-                                </p>
+                                </span>
                             )}
-                            <p className="text-xs font-medium">
+                            <span className="block text-xs font-medium">
                                 Convert all transaction values?
-                            </p>
+                            </span>
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
@@ -293,7 +337,7 @@ export default function MoneyDrain() {
 
             <div className="min-h-screen bg-background p-3">
                 <div className="max-w-md mx-auto space-y-3">
-                    {/* Top Bar - Currency & Filter */}
+                    {/* Top Bar - Currency, Account & Filter */}
                     <div className="flex items-center justify-between">
                         {/* Currency Cycle Button */}
                         <Tooltip content={`Currency: ${currency}`}>
@@ -307,6 +351,22 @@ export default function MoneyDrain() {
                                 {currencyLabels[currency]}
                             </Button>
                         </Tooltip>
+
+                        {/* Account Storage Buttons */}
+                        <div className="flex items-center gap-1">
+                            {[1, 2, 3].map((num) => (
+                                <Tooltip key={num} content={`Account ${num}`}>
+                                    <Button
+                                        variant={selectedAccount === num ? "default" : "outline"}
+                                        size="sm"
+                                        onClick={() => setSelectedAccount(num as 1 | 2 | 3)}
+                                        className="size-8 p-0 font-bold"
+                                    >
+                                        {num}
+                                    </Button>
+                                </Tooltip>
+                            ))}
+                        </div>
 
                         {/* Period Cycle Button */}
                         <Tooltip content={`Filter: ${periodLabels[filterPeriod]}`}>
@@ -322,41 +382,41 @@ export default function MoneyDrain() {
                         </Tooltip>
                     </div>
 
-                    {/* Stats - Bento Layout */}
+                    {/* Stats - With Labels */}
                     <Card className="bg-card/60 overflow-hidden">
                         <div className="grid grid-cols-3 divide-x divide-border/50">
-                            <Tooltip content="Balance">
-                                <div className="p-3 flex flex-col items-center gap-1.5 cursor-default hover:bg-muted/30 transition-colors">
-                                    <div className="size-7 rounded-md bg-primary/10 flex items-center justify-center">
-                                        <IconWallet className="size-3.5 text-primary" />
-                                    </div>
-                                    <p className={`text-sm font-bold tabular-nums ${balance >= 0 ? "text-primary" : "text-destructive"}`}>
-                                        {formatCurrency(balance, currency)}
-                                    </p>
+                            {/* Expense */}
+                            <div className="p-3 flex flex-col items-center gap-1 cursor-default hover:bg-muted/30 transition-colors">
+                                <div className="size-8 rounded-md bg-rose-500/10 flex items-center justify-center">
+                                    <IconTrendingDown className="size-4 text-rose-500" />
                                 </div>
-                            </Tooltip>
+                                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Expense</p>
+                                <p className="text-sm font-bold tabular-nums text-rose-500">
+                                    {formatCurrency(expenses, currency)}
+                                </p>
+                            </div>
 
-                            <Tooltip content="Income">
-                                <div className="p-3 flex flex-col items-center gap-1.5 cursor-default hover:bg-muted/30 transition-colors">
-                                    <div className="size-7 rounded-md bg-emerald-500/10 flex items-center justify-center">
-                                        <IconTrendingUp className="size-3.5 text-emerald-500" />
-                                    </div>
-                                    <p className="text-sm font-bold tabular-nums text-emerald-500">
-                                        {formatCurrency(income, currency)}
-                                    </p>
+                            {/* Income */}
+                            <div className="p-3 flex flex-col items-center gap-1 cursor-default hover:bg-muted/30 transition-colors">
+                                <div className="size-8 rounded-md bg-emerald-500/10 flex items-center justify-center">
+                                    <IconTrendingUp className="size-4 text-emerald-500" />
                                 </div>
-                            </Tooltip>
+                                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Income</p>
+                                <p className="text-sm font-bold tabular-nums text-emerald-500">
+                                    {formatCurrency(income, currency)}
+                                </p>
+                            </div>
 
-                            <Tooltip content="Expenses">
-                                <div className="p-3 flex flex-col items-center gap-1.5 cursor-default hover:bg-muted/30 transition-colors">
-                                    <div className="size-7 rounded-md bg-rose-500/10 flex items-center justify-center">
-                                        <IconTrendingDown className="size-3.5 text-rose-500" />
-                                    </div>
-                                    <p className="text-sm font-bold tabular-nums text-rose-500">
-                                        {formatCurrency(expenses, currency)}
-                                    </p>
+                            {/* Bank (Balance) */}
+                            <div className="p-3 flex flex-col items-center gap-1 cursor-default hover:bg-muted/30 transition-colors">
+                                <div className="size-8 rounded-md bg-primary/10 flex items-center justify-center">
+                                    <IconBuildingBank className="size-4 text-primary" />
                                 </div>
-                            </Tooltip>
+                                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Bank</p>
+                                <p className={`text-sm font-bold tabular-nums ${balance >= 0 ? "text-primary" : "text-destructive"}`}>
+                                    {formatCurrency(balance, currency)}
+                                </p>
+                            </div>
                         </div>
                     </Card>
 
@@ -408,48 +468,126 @@ export default function MoneyDrain() {
                                             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                                         />
                                         <Input
-                                            type="number"
+                                            type="text"
+                                            inputMode="numeric"
                                             placeholder="Amount"
-                                            step="0.01"
-                                            min="0"
-                                            value={formData.amount}
-                                            onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                                            value={formData.amount ? Number(formData.amount).toLocaleString() : ""}
+                                            onChange={(e) => {
+                                                // Remove all non-digit characters except decimal point
+                                                const raw = e.target.value.replace(/[^0-9.]/g, "");
+                                                // Ensure only one decimal point
+                                                const parts = raw.split(".");
+                                                const cleaned = parts.length > 2
+                                                    ? parts[0] + "." + parts.slice(1).join("")
+                                                    : raw;
+                                                setFormData({ ...formData, amount: cleaned });
+                                            }}
                                         />
                                     </div>
 
                                     {/* Category */}
-                                    {formData.type === "expense" && (
-                                        <Select
-                                            value={formData.category}
-                                            onValueChange={(value) => setFormData({ ...formData, category: value })}
-                                        >
-                                            <SelectTrigger className="w-full">
-                                                <SelectValue placeholder="Category" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {defaultCategories
-                                                    .filter((c) => c.id !== "salary")
-                                                    .map((category) => (
-                                                        <SelectItem key={category.id} value={category.id}>
-                                                            <span className="flex items-center gap-2">
-                                                                <span>{category.icon}</span>
-                                                                <span>{category.name}</span>
-                                                            </span>
-                                                        </SelectItem>
-                                                    ))}
-                                            </SelectContent>
-                                        </Select>
+                                    <Select
+                                        value={formData.category}
+                                        onValueChange={(value) => {
+                                            if (value === "__add_new__") {
+                                                setShowAddCategory(true);
+                                            } else {
+                                                setFormData({ ...formData, category: value });
+                                            }
+                                        }}
+                                    >
+                                        <SelectTrigger className="w-full">
+                                            <SelectValue placeholder="Category" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {getCategories(formData.type).map((category) => (
+                                                <SelectItem key={category.id} value={category.id}>
+                                                    <span className="flex items-center gap-2">
+                                                        <span>{category.icon}</span>
+                                                        <span>{category.name}</span>
+                                                    </span>
+                                                </SelectItem>
+                                            ))}
+                                            <SelectItem value="__add_new__">
+                                                <span className="flex items-center gap-2 text-primary">
+                                                    <span>➕</span>
+                                                    <span>Add Custom Category</span>
+                                                </span>
+                                            </SelectItem>
+                                        </SelectContent>
+                                    </Select>
+
+                                    {/* Add Custom Category Form */}
+                                    {showAddCategory && (
+                                        <div className="p-2 bg-muted/50 rounded-md space-y-2">
+                                            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Pick an icon</p>
+                                            <div className="grid grid-cols-10 gap-1">
+                                                {iconOptions.map((icon) => (
+                                                    <button
+                                                        key={icon}
+                                                        type="button"
+                                                        onClick={() => setNewCategoryIcon(icon)}
+                                                        className={`size-7 flex items-center justify-center rounded-md text-sm transition-colors hover:bg-muted ${newCategoryIcon === icon ? "bg-primary/20 ring-1 ring-primary" : ""}`}
+                                                    >
+                                                        {icon}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                            <Input
+                                                placeholder="Category name"
+                                                value={newCategoryName}
+                                                onChange={(e) => setNewCategoryName(e.target.value)}
+                                                className="w-full"
+                                            />
+                                            <div className="flex gap-2">
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="flex-1"
+                                                    onClick={() => {
+                                                        setShowAddCategory(false);
+                                                        setNewCategoryName("");
+                                                        setNewCategoryIcon("📌");
+                                                    }}
+                                                >
+                                                    Cancel
+                                                </Button>
+                                                <Button
+                                                    type="button"
+                                                    size="sm"
+                                                    className="flex-1"
+                                                    onClick={() => {
+                                                        if (newCategoryName.trim()) {
+                                                            const cat = addCustomCategory(formData.type, {
+                                                                name: newCategoryName.trim(),
+                                                                icon: newCategoryIcon || "📌",
+                                                                color: "oklch(0.55 0.15 200)",
+                                                            });
+                                                            setFormData({ ...formData, category: cat.id });
+                                                            setShowAddCategory(false);
+                                                            setNewCategoryName("");
+                                                            setNewCategoryIcon("📌");
+                                                        }
+                                                    }}
+                                                >
+                                                    Add
+                                                </Button>
+                                            </div>
+                                        </div>
                                     )}
 
-                                    {/* Actions */}
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <Button type="button" variant="outline" size="sm" onClick={() => { setShowAddForm(false); setEditingId(null); }}>
-                                            Cancel
-                                        </Button>
-                                        <Button type="submit" size="sm">
-                                            {editingId ? "Save" : "Add"}
-                                        </Button>
-                                    </div>
+                                    {/* Actions - Only show when not adding custom category */}
+                                    {!showAddCategory && (
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <Button type="button" variant="outline" size="sm" onClick={() => { setShowAddForm(false); setEditingId(null); }}>
+                                                Cancel
+                                            </Button>
+                                            <Button type="submit" size="sm">
+                                                {editingId ? "Save" : "Add"}
+                                            </Button>
+                                        </div>
+                                    )}
                                 </form>
                             </CardContent>
                         </Card>
@@ -499,9 +637,40 @@ export default function MoneyDrain() {
                     {/* Recent Transactions */}
                     <Card className="bg-card/60">
                         <CardContent className="p-3">
-                            <div className="flex items-center gap-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-2">
-                                <span>📋</span>
-                                <span>Recent</span>
+                            <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                                    <span>📋</span>
+                                    <span>Recent</span>
+                                </div>
+                                {recentTransactions.length > 0 && (
+                                    <AlertDialog>
+                                        <AlertDialogTrigger asChild>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-6 px-2 text-[10px] text-muted-foreground hover:text-destructive"
+                                            >
+                                                <IconTrash className="size-3 mr-1" />
+                                                Clear All
+                                            </Button>
+                                        </AlertDialogTrigger>
+                                        <AlertDialogContent size="sm">
+                                            <AlertDialogHeader>
+                                                <AlertDialogTitle>Clear All Transactions?</AlertDialogTitle>
+                                                <AlertDialogDescription>
+                                                    <span className="block">This will permanently delete all {transactions.length} transaction(s) in Account {selectedAccount}.</span>
+                                                    <span className="block mt-2 font-medium text-destructive">⚠️ This action cannot be undone!</span>
+                                                </AlertDialogDescription>
+                                            </AlertDialogHeader>
+                                            <AlertDialogFooter>
+                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                <AlertDialogAction variant="destructive" onClick={clearAllTransactions}>
+                                                    Yes, Clear All
+                                                </AlertDialogAction>
+                                            </AlertDialogFooter>
+                                        </AlertDialogContent>
+                                    </AlertDialog>
+                                )}
                             </div>
                             {recentTransactions.length === 0 ? (
                                 <div className="text-center py-6">
@@ -512,16 +681,31 @@ export default function MoneyDrain() {
                                 </div>
                             ) : (
                                 <div className="space-y-0.5">
-                                    {recentTransactions.map((transaction) => (
-                                        <TransactionItem
-                                            key={transaction.id}
-                                            transaction={transaction}
-                                            categoryInfo={getCategoryInfo(transaction.category)}
-                                            currency={currency}
-                                            onEdit={() => startEdit(transaction)}
-                                            onDelete={() => deleteTransaction(transaction.id)}
-                                        />
-                                    ))}
+                                    {recentTransactions.map((transaction, index) => {
+                                        const dateLabel = getDateLabel(transaction.date);
+                                        const prevTransaction = index > 0 ? recentTransactions[index - 1] : null;
+                                        const prevDateLabel = prevTransaction ? getDateLabel(prevTransaction.date) : null;
+                                        const showDateSpacer = dateLabel !== prevDateLabel;
+
+                                        return (
+                                            <div key={transaction.id}>
+                                                {showDateSpacer && (
+                                                    <div className="py-2 first:pt-0">
+                                                        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+                                                            {dateLabel}
+                                                        </p>
+                                                    </div>
+                                                )}
+                                                <TransactionItem
+                                                    transaction={transaction}
+                                                    categoryInfo={getCategoryInfo(transaction.category)}
+                                                    currency={currency}
+                                                    onEdit={() => startEdit(transaction)}
+                                                    onDelete={() => deleteTransaction(transaction.id)}
+                                                />
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             )}
                         </CardContent>

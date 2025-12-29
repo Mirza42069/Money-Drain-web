@@ -57,16 +57,27 @@ export function convertCurrency(
     return Math.round(convertedAmount * 100) / 100;
 }
 
-export const defaultCategories: Category[] = [
+export const defaultExpenseCategories: Category[] = [
     { id: "food", name: "Food & Dining", icon: "🍕", color: "oklch(0.7 0.18 60)" },
     { id: "transport", name: "Transport", icon: "🚗", color: "oklch(0.55 0.2 200)" },
     { id: "shopping", name: "Shopping", icon: "🛍️", color: "oklch(0.65 0.2 280)" },
     { id: "entertainment", name: "Entertainment", icon: "🎬", color: "oklch(0.6 0.22 330)" },
     { id: "bills", name: "Bills & Utilities", icon: "💡", color: "oklch(0.65 0.24 25)" },
-    { id: "health", name: "Health", icon: "💊", color: "oklch(0.65 0.24 145)" },
-    { id: "salary", name: "Salary", icon: "💰", color: "oklch(0.65 0.24 145)" },
+    { id: "health", name: "Health", icon: "💊", color: "oklch(0.65 0.17 160)" },
     { id: "other", name: "Other", icon: "📦", color: "oklch(0.55 0 0)" },
 ];
+
+export const defaultIncomeCategories: Category[] = [
+    { id: "salary", name: "Salary", icon: "💰", color: "oklch(0.65 0.17 160)" },
+    { id: "freelance", name: "Freelance", icon: "💻", color: "oklch(0.55 0.2 200)" },
+    { id: "investment", name: "Investment", icon: "📈", color: "oklch(0.65 0.2 280)" },
+    { id: "gift", name: "Gift", icon: "🎁", color: "oklch(0.6 0.22 330)" },
+    { id: "refund", name: "Refund", icon: "🔄", color: "oklch(0.7 0.18 60)" },
+    { id: "other_income", name: "Other", icon: "💵", color: "oklch(0.55 0 0)" },
+];
+
+// Combined for backward compatibility
+export const defaultCategories: Category[] = [...defaultExpenseCategories, ...defaultIncomeCategories];
 
 export function formatCurrency(amount: number, currency: CurrencyType = "USD"): string {
     const currencyInfo = currencies[currency];
