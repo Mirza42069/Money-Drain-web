@@ -30,7 +30,7 @@ function Tooltip({ children, content, side = "bottom" }: TooltipProps) {
                 <div
                     className={cn(
                         "absolute z-[9999] px-2 py-1 text-[11px] font-medium rounded-md pointer-events-none",
-                        "bg-zinc-900 text-zinc-100 shadow-xl border border-zinc-700",
+                        "bg-popover text-popover-foreground shadow-lg border border-border",
                         "whitespace-nowrap animate-in fade-in-0 zoom-in-95 duration-100",
                         positionClasses[side]
                     )}

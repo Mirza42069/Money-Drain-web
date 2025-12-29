@@ -13,6 +13,9 @@ import {
     IconClock,
     IconCoin,
     IconBuildingBank,
+    IconDownload,
+    IconSun,
+    IconMoon,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -107,6 +110,7 @@ export default function MoneyDrain() {
         clearAllTransactions,
         getCategories,
         addCustomCategory,
+        deleteCustomCategory,
         balance: totalBalance,
         income: totalIncome,
         expenses: totalExpenses,
@@ -128,10 +132,20 @@ export default function MoneyDrain() {
     const [showAddCategory, setShowAddCategory] = useState(false);
     const [newCategoryName, setNewCategoryName] = useState("");
     const [newCategoryIcon, setNewCategoryIcon] = useState("📌");
+    const [isDarkMode, setIsDarkMode] = useState(true);
 
-    // Fix hydration - only render dynamic content after mount
+    // Fix hydration and load theme - only render dynamic content after mount
     useEffect(() => {
         setMounted(true);
+        // Load saved theme preference (default to dark)
+        const savedTheme = localStorage.getItem("money-drain-theme");
+        const prefersDark = savedTheme !== "light";
+        setIsDarkMode(prefersDark);
+        if (prefersDark) {
+            document.documentElement.classList.add("dark");
+        } else {
+            document.documentElement.classList.remove("dark");
+        }
     }, []);
 
 
@@ -420,7 +434,7 @@ export default function MoneyDrain() {
                         </div>
                     </Card>
 
-                    {/* Add Button - Square with rounded corners */}
+                    {/* Add Button - Centered */}
                     <div className="flex justify-center">
                         <Tooltip content={showAddForm ? "Close" : "Add"}>
                             <Button
@@ -486,36 +500,56 @@ export default function MoneyDrain() {
                                     </div>
 
                                     {/* Category */}
-                                    <Select
-                                        value={formData.category}
-                                        onValueChange={(value) => {
-                                            if (value === "__add_new__") {
-                                                setShowAddCategory(true);
-                                            } else {
-                                                setFormData({ ...formData, category: value });
-                                            }
-                                        }}
-                                    >
-                                        <SelectTrigger className="w-full">
-                                            <SelectValue placeholder="Category" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {getCategories(formData.type).map((category) => (
-                                                <SelectItem key={category.id} value={category.id}>
-                                                    <span className="flex items-center gap-2">
-                                                        <span>{category.icon}</span>
-                                                        <span>{category.name}</span>
+                                    <div className="flex gap-2">
+                                        <Select
+                                            value={formData.category}
+                                            onValueChange={(value) => {
+                                                if (value === "__add_new__") {
+                                                    setShowAddCategory(true);
+                                                } else {
+                                                    setFormData({ ...formData, category: value });
+                                                }
+                                            }}
+                                        >
+                                            <SelectTrigger className="flex-1">
+                                                <SelectValue placeholder="Category" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {getCategories(formData.type).map((category) => (
+                                                    <SelectItem key={category.id} value={category.id}>
+                                                        <span className="flex items-center gap-2">
+                                                            <span>{category.icon}</span>
+                                                            <span>{category.name}</span>
+                                                            {category.id.startsWith("custom_") && (
+                                                                <span className="text-[9px] px-1 py-0.5 rounded bg-muted text-muted-foreground">custom</span>
+                                                            )}
+                                                        </span>
+                                                    </SelectItem>
+                                                ))}
+                                                <SelectItem value="__add_new__">
+                                                    <span className="flex items-center gap-2 text-primary">
+                                                        <span>➕</span>
+                                                        <span>Add Custom Category</span>
                                                     </span>
                                                 </SelectItem>
-                                            ))}
-                                            <SelectItem value="__add_new__">
-                                                <span className="flex items-center gap-2 text-primary">
-                                                    <span>➕</span>
-                                                    <span>Add Custom Category</span>
-                                                </span>
-                                            </SelectItem>
-                                        </SelectContent>
-                                    </Select>
+                                            </SelectContent>
+                                        </Select>
+                                        {/* Delete custom category button */}
+                                        {formData.category.startsWith("custom_") && (
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => {
+                                                    deleteCustomCategory(formData.type, formData.category);
+                                                    setFormData({ ...formData, category: "other" });
+                                                }}
+                                                className="px-2 text-muted-foreground hover:text-destructive hover:border-destructive"
+                                            >
+                                                <IconTrash className="size-4" />
+                                            </Button>
+                                        )}
+                                    </div>
 
                                     {/* Add Custom Category Form */}
                                     {showAddCategory && (
@@ -642,35 +676,92 @@ export default function MoneyDrain() {
                                     <span>📋</span>
                                     <span>Recent</span>
                                 </div>
-                                {recentTransactions.length > 0 && (
-                                    <AlertDialog>
-                                        <AlertDialogTrigger asChild>
+                                <div className="flex items-center gap-1">
+                                    {/* Theme Toggle */}
+                                    <Tooltip content={isDarkMode ? "Light Mode" : "Dark Mode"} side="left">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => {
+                                                const newDarkMode = !isDarkMode;
+                                                setIsDarkMode(newDarkMode);
+                                                if (newDarkMode) {
+                                                    document.documentElement.classList.add("dark");
+                                                    localStorage.setItem("money-drain-theme", "dark");
+                                                } else {
+                                                    document.documentElement.classList.remove("dark");
+                                                    localStorage.setItem("money-drain-theme", "light");
+                                                }
+                                            }}
+                                            className="h-6 px-2 text-muted-foreground hover:text-foreground"
+                                        >
+                                            {isDarkMode
+                                                ? <IconSun className="size-3" />
+                                                : <IconMoon className="size-3" />}
+                                        </Button>
+                                    </Tooltip>
+
+                                    {/* Export Button */}
+                                    {transactions.length > 0 && (
+                                        <Tooltip content="Export CSV">
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
-                                                className="h-6 px-2 text-[10px] text-muted-foreground hover:text-destructive"
+                                                onClick={() => {
+                                                    const headers = ["Date", "Description", "Category", "Type", "Amount"];
+                                                    const rows = transactions.map(t => [
+                                                        new Date(t.date).toLocaleDateString(),
+                                                        t.description,
+                                                        t.category,
+                                                        t.type,
+                                                        t.amount.toString()
+                                                    ]);
+                                                    const csv = [headers, ...rows].map(row => row.join(",")).join("\n");
+                                                    const blob = new Blob([csv], { type: "text/csv" });
+                                                    const url = URL.createObjectURL(blob);
+                                                    const a = document.createElement("a");
+                                                    a.href = url;
+                                                    a.download = `money-drain-account${selectedAccount}-${new Date().toISOString().split("T")[0]}.csv`;
+                                                    a.click();
+                                                    URL.revokeObjectURL(url);
+                                                }}
+                                                className="h-6 px-2 text-muted-foreground hover:text-foreground"
                                             >
-                                                <IconTrash className="size-3 mr-1" />
-                                                Clear All
+                                                <IconDownload className="size-3" />
                                             </Button>
-                                        </AlertDialogTrigger>
-                                        <AlertDialogContent size="sm">
-                                            <AlertDialogHeader>
-                                                <AlertDialogTitle>Clear All Transactions?</AlertDialogTitle>
-                                                <AlertDialogDescription>
-                                                    <span className="block">This will permanently delete all {transactions.length} transaction(s) in Account {selectedAccount}.</span>
-                                                    <span className="block mt-2 font-medium text-destructive">⚠️ This action cannot be undone!</span>
-                                                </AlertDialogDescription>
-                                            </AlertDialogHeader>
-                                            <AlertDialogFooter>
-                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                <AlertDialogAction variant="destructive" onClick={clearAllTransactions}>
-                                                    Yes, Clear All
-                                                </AlertDialogAction>
-                                            </AlertDialogFooter>
-                                        </AlertDialogContent>
-                                    </AlertDialog>
-                                )}
+                                        </Tooltip>
+                                    )}
+
+                                    {/* Clear All */}
+                                    {recentTransactions.length > 0 && (
+                                        <AlertDialog>
+                                            <AlertDialogTrigger asChild>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="h-6 px-2 text-muted-foreground hover:text-destructive"
+                                                >
+                                                    <IconTrash className="size-3" />
+                                                </Button>
+                                            </AlertDialogTrigger>
+                                            <AlertDialogContent size="sm">
+                                                <AlertDialogHeader>
+                                                    <AlertDialogTitle>Clear All Transactions?</AlertDialogTitle>
+                                                    <AlertDialogDescription>
+                                                        <span className="block">This will permanently delete all {transactions.length} transaction(s) in Account {selectedAccount}.</span>
+                                                        <span className="block mt-2 font-medium text-destructive">⚠️ This action cannot be undone!</span>
+                                                    </AlertDialogDescription>
+                                                </AlertDialogHeader>
+                                                <AlertDialogFooter>
+                                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                    <AlertDialogAction variant="destructive" onClick={clearAllTransactions}>
+                                                        Yes, Clear All
+                                                    </AlertDialogAction>
+                                                </AlertDialogFooter>
+                                            </AlertDialogContent>
+                                        </AlertDialog>
+                                    )}
+                                </div>
                             </div>
                             {recentTransactions.length === 0 ? (
                                 <div className="text-center py-6">
