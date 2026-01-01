@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { SignInButton, SignOutButton, useUser } from "@clerk/nextjs";
+import { SignInButton, SignOutButton, useUser, useAuth, PricingTable, UserButton } from "@clerk/nextjs";
 import {
     IconPlus,
     IconTrendingUp,
@@ -17,6 +17,8 @@ import {
     IconDownload,
     IconSun,
     IconMoon,
+    IconLock,
+    IconSettings,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -67,6 +69,9 @@ const periodLabels: Record<FilterPeriod, string> = {
     "6months": "6M",
     year: "1Y",
 };
+
+// Premium-locked filter periods
+const premiumFilters: FilterPeriod[] = ["year", "all"];
 
 // Icon options for custom categories
 const iconOptions = [
@@ -134,6 +139,11 @@ export default function MoneyDrain() {
     const [newCategoryName, setNewCategoryName] = useState("");
     const [newCategoryIcon, setNewCategoryIcon] = useState("📌");
     const [isDarkMode, setIsDarkMode] = useState(true);
+    const [showPricingView, setShowPricingView] = useState(false);
+
+    // Check for premium subscription access (check both plan and feature)
+    const { has, isLoaded } = useAuth();
+    const hasPremiumAccess = isLoaded && (has?.({ plan: "premium" }) || has?.({ feature: "1_year_and_all_filter" }));
 
     // Fix hydration and load theme - only render dynamic content after mount
     useEffect(() => {
@@ -203,11 +213,25 @@ export default function MoneyDrain() {
         setShowConvertDialog(false);
     };
 
-    // Cycle period
+    // Cycle period - with premium filter gating
     const cyclePeriod = () => {
         const currentIndex = periodOrder.indexOf(filterPeriod);
         const nextIndex = (currentIndex + 1) % periodOrder.length;
-        setFilterPeriod(periodOrder[nextIndex]);
+        const nextPeriod = periodOrder[nextIndex];
+
+        // Check if next period is premium-locked
+        if (premiumFilters.includes(nextPeriod) && !hasPremiumAccess) {
+            setShowPricingView(true);
+            return;
+        }
+
+        setFilterPeriod(nextPeriod);
+    };
+
+    // Handle closing pricing view - reset to 1D filter
+    const handleClosePricingView = () => {
+        setShowPricingView(false);
+        setFilterPeriod("day");
     };
 
     // Filter transactions by period
@@ -350,463 +374,499 @@ export default function MoneyDrain() {
                 </AlertDialogContent>
             </AlertDialog>
 
-            <div className="min-h-screen bg-background p-3">
-                <div className="max-w-md mx-auto space-y-3">
-                    {/* Top Bar - Currency, Account & Filter */}
-                    <div className="flex items-center justify-between">
-                        {/* Currency Cycle Button */}
-                        <Tooltip content={`Currency: ${currency}`}>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={cycleCurrency}
-                                className="gap-1.5 font-semibold min-w-[60px]"
-                            >
-                                <IconCoin className="size-3.5" />
-                                {currencyLabels[currency]}
-                            </Button>
-                        </Tooltip>
-
-                        {/* Account Storage Buttons */}
-                        <div className="flex items-center gap-1">
-                            {[1, 2, 3].map((num) => (
-                                <Tooltip key={num} content={`Account ${num}`}>
-                                    <Button
-                                        variant={selectedAccount === num ? "default" : "outline"}
-                                        size="sm"
-                                        onClick={() => setSelectedAccount(num as 1 | 2 | 3)}
-                                        className="size-8 p-0 font-bold"
-                                    >
-                                        {num}
-                                    </Button>
-                                </Tooltip>
-                            ))}
+            {/* Premium Pricing View - Full Page */}
+            {showPricingView ? (
+                <div className="min-h-screen bg-background p-4">
+                    <div className="max-w-2xl mx-auto">
+                        <div className="text-center mb-6">
+                            <div className="size-16 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center mx-auto mb-4">
+                                <IconLock className="size-8 text-white" />
+                            </div>
+                            <h1 className="text-2xl font-bold mb-2">Upgrade to Premium</h1>
+                            <p className="text-muted-foreground">
+                                Unlock the <strong>1 Year</strong> and <strong>All Time</strong> filters to view your complete financial history
+                            </p>
                         </div>
 
-                        {/* Period Cycle Button */}
-                        <Tooltip content={`Filter: ${periodLabels[filterPeriod]}`}>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={cyclePeriod}
-                                className="gap-1.5 font-semibold min-w-[60px]"
-                            >
-                                <IconClock className="size-3.5" />
-                                {periodLabels[filterPeriod]}
-                            </Button>
-                        </Tooltip>
-                    </div>
-
-                    {/* Stats - With Labels */}
-                    <Card className="bg-card/60 overflow-hidden">
-                        <div className="grid grid-cols-3 divide-x divide-border/50">
-                            {/* Expense */}
-                            <div className="p-3 flex flex-col items-center gap-1 cursor-default hover:bg-muted/30 transition-colors">
-                                <div className="size-8 rounded-md bg-rose-500/10 flex items-center justify-center">
-                                    <IconTrendingDown className="size-4 text-rose-500" />
-                                </div>
-                                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Expense</p>
-                                <p className="text-sm font-bold tabular-nums text-rose-500">
-                                    {formatCurrency(expenses, currency)}
-                                </p>
-                            </div>
-
-                            {/* Income */}
-                            <div className="p-3 flex flex-col items-center gap-1 cursor-default hover:bg-muted/30 transition-colors">
-                                <div className="size-8 rounded-md bg-emerald-500/10 flex items-center justify-center">
-                                    <IconTrendingUp className="size-4 text-emerald-500" />
-                                </div>
-                                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Income</p>
-                                <p className="text-sm font-bold tabular-nums text-emerald-500">
-                                    {formatCurrency(income, currency)}
-                                </p>
-                            </div>
-
-                            {/* Bank (Balance) */}
-                            <div className="p-3 flex flex-col items-center gap-1 cursor-default hover:bg-muted/30 transition-colors">
-                                <div className="size-8 rounded-md bg-primary/10 flex items-center justify-center">
-                                    <IconBuildingBank className="size-4 text-primary" />
-                                </div>
-                                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Bank</p>
-                                <p className={`text-sm font-bold tabular-nums ${balance >= 0 ? "text-primary" : "text-destructive"}`}>
-                                    {formatCurrency(balance, currency)}
-                                </p>
-                            </div>
+                        <div className="mb-6">
+                            <PricingTable />
                         </div>
-                    </Card>
 
-                    {/* Add Button - Centered */}
-                    <div className="flex justify-center">
-                        <Tooltip content={showAddForm ? "Close" : "Add"}>
+                        <div className="text-center">
                             <Button
-                                size="lg"
-                                onClick={() => setShowAddForm(!showAddForm)}
-                                className="size-10 p-0"
+                                variant="ghost"
+                                onClick={handleClosePricingView}
+                                className="text-muted-foreground"
                             >
-                                <IconPlus className={`size-5 transition-transform duration-200 ${showAddForm ? "rotate-45" : ""}`} />
+                                Maybe Later
                             </Button>
-                        </Tooltip>
+                        </div>
                     </div>
+                </div>
+            ) : (
 
-                    {/* Add Transaction Form */}
-                    {showAddForm && (
-                        <Card className="border-primary/20 animate-in slide-in-from-top-2 duration-200">
-                            <CardContent className="p-3">
-                                <form onSubmit={handleSubmit} className="space-y-3">
-                                    {/* Type Toggle */}
-                                    <div className="grid grid-cols-2 gap-2">
+                <div className="min-h-screen bg-background p-3">
+                    <div className="max-w-md mx-auto space-y-3">
+                        {/* Top Bar - Currency, Account & Filter */}
+                        <div className="flex items-center justify-between">
+                            {/* Currency Cycle Button */}
+                            <Tooltip content={`Currency: ${currency}`}>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={cycleCurrency}
+                                    className="gap-1.5 font-semibold min-w-[60px]"
+                                >
+                                    <IconCoin className="size-3.5" />
+                                    {currencyLabels[currency]}
+                                </Button>
+                            </Tooltip>
+
+                            {/* Account Storage Buttons */}
+                            <div className="flex items-center gap-1">
+                                {[1, 2, 3].map((num) => (
+                                    <Tooltip key={num} content={`Account ${num}`}>
                                         <Button
-                                            type="button"
-                                            variant={formData.type === "expense" ? "default" : "outline"}
+                                            variant={selectedAccount === num ? "default" : "outline"}
                                             size="sm"
-                                            onClick={() => setFormData({ ...formData, type: "expense" })}
+                                            onClick={() => setSelectedAccount(num as 1 | 2 | 3)}
+                                            className="size-8 p-0 font-bold"
                                         >
-                                            <IconArrowDown data-icon="inline-start" className="size-3.5" />
-                                            Expense
+                                            {num}
                                         </Button>
-                                        <Button
-                                            type="button"
-                                            variant={formData.type === "income" ? "default" : "outline"}
-                                            size="sm"
-                                            onClick={() => setFormData({ ...formData, type: "income" })}
-                                        >
-                                            <IconArrowUp data-icon="inline-start" className="size-3.5" />
-                                            Income
-                                        </Button>
-                                    </div>
+                                    </Tooltip>
+                                ))}
+                            </div>
 
-                                    {/* Description & Amount */}
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <Input
-                                            placeholder="Description"
-                                            value={formData.description}
-                                            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                                        />
-                                        <Input
-                                            type="text"
-                                            inputMode="numeric"
-                                            placeholder="Amount"
-                                            value={formData.amount ? Number(formData.amount).toLocaleString() : ""}
-                                            onChange={(e) => {
-                                                // Remove all non-digit characters except decimal point
-                                                const raw = e.target.value.replace(/[^0-9.]/g, "");
-                                                // Ensure only one decimal point
-                                                const parts = raw.split(".");
-                                                const cleaned = parts.length > 2
-                                                    ? parts[0] + "." + parts.slice(1).join("")
-                                                    : raw;
-                                                setFormData({ ...formData, amount: cleaned });
-                                            }}
-                                        />
-                                    </div>
+                            {/* Period Cycle Button */}
+                            <Tooltip content={`Filter: ${periodLabels[filterPeriod]}${!hasPremiumAccess && premiumFilters.includes(periodOrder[(periodOrder.indexOf(filterPeriod) + 1) % periodOrder.length]) ? " (Premium)" : ""}`}>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={cyclePeriod}
+                                    className="gap-1.5 font-semibold min-w-[60px]"
+                                >
+                                    {!hasPremiumAccess && premiumFilters.includes(periodOrder[(periodOrder.indexOf(filterPeriod) + 1) % periodOrder.length]) ? (
+                                        <IconLock className="size-3.5 text-amber-500" />
+                                    ) : (
+                                        <IconClock className="size-3.5" />
+                                    )}
+                                    {periodLabels[filterPeriod]}
+                                </Button>
+                            </Tooltip>
+                        </div>
 
-                                    {/* Category */}
-                                    <div className="flex gap-2">
-                                        <Select
-                                            value={formData.category}
-                                            onValueChange={(value) => {
-                                                if (value === "__add_new__") {
-                                                    setShowAddCategory(true);
-                                                } else {
-                                                    setFormData({ ...formData, category: value });
-                                                }
-                                            }}
-                                        >
-                                            <SelectTrigger className="flex-1">
-                                                <SelectValue placeholder="Category" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {getCategories(formData.type).map((category: Category) => (
-                                                    <SelectItem key={category.id} value={category.id}>
-                                                        <span className="flex items-center gap-2">
-                                                            <span>{category.icon}</span>
-                                                            <span>{category.name}</span>
-                                                            {category.id.startsWith("custom_") && (
-                                                                <span className="text-[9px] px-1 py-0.5 rounded bg-muted text-muted-foreground">custom</span>
-                                                            )}
-                                                        </span>
-                                                    </SelectItem>
-                                                ))}
-                                                <SelectItem value="__add_new__">
-                                                    <span className="flex items-center gap-2 text-primary">
-                                                        <span>➕</span>
-                                                        <span>Add Custom Category</span>
-                                                    </span>
-                                                </SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                        {/* Delete custom category button */}
-                                        {formData.category.startsWith("custom_") && (
+                        {/* Stats - With Labels */}
+                        <Card className="bg-card/60 overflow-hidden">
+                            <div className="grid grid-cols-3 divide-x divide-border/50">
+                                {/* Expense */}
+                                <div className="p-3 flex flex-col items-center gap-1 cursor-default hover:bg-muted/30 transition-colors">
+                                    <div className="size-8 rounded-md bg-rose-500/10 flex items-center justify-center">
+                                        <IconTrendingDown className="size-4 text-rose-500" />
+                                    </div>
+                                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Expense</p>
+                                    <p className="text-sm font-bold tabular-nums text-rose-500">
+                                        {formatCurrency(expenses, currency)}
+                                    </p>
+                                </div>
+
+                                {/* Income */}
+                                <div className="p-3 flex flex-col items-center gap-1 cursor-default hover:bg-muted/30 transition-colors">
+                                    <div className="size-8 rounded-md bg-emerald-500/10 flex items-center justify-center">
+                                        <IconTrendingUp className="size-4 text-emerald-500" />
+                                    </div>
+                                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Income</p>
+                                    <p className="text-sm font-bold tabular-nums text-emerald-500">
+                                        {formatCurrency(income, currency)}
+                                    </p>
+                                </div>
+
+                                {/* Bank (Balance) */}
+                                <div className="p-3 flex flex-col items-center gap-1 cursor-default hover:bg-muted/30 transition-colors">
+                                    <div className="size-8 rounded-md bg-primary/10 flex items-center justify-center">
+                                        <IconBuildingBank className="size-4 text-primary" />
+                                    </div>
+                                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Bank</p>
+                                    <p className={`text-sm font-bold tabular-nums ${balance >= 0 ? "text-primary" : "text-destructive"}`}>
+                                        {formatCurrency(balance, currency)}
+                                    </p>
+                                </div>
+                            </div>
+                        </Card>
+
+                        {/* Add Button - Centered */}
+                        <div className="flex justify-center">
+                            <Tooltip content={showAddForm ? "Close" : "Add"}>
+                                <Button
+                                    size="lg"
+                                    onClick={() => setShowAddForm(!showAddForm)}
+                                    className="size-10 p-0"
+                                >
+                                    <IconPlus className={`size-5 transition-transform duration-200 ${showAddForm ? "rotate-45" : ""}`} />
+                                </Button>
+                            </Tooltip>
+                        </div>
+
+                        {/* Add Transaction Form */}
+                        {showAddForm && (
+                            <Card className="border-primary/20 animate-in slide-in-from-top-2 duration-200">
+                                <CardContent className="p-3">
+                                    <form onSubmit={handleSubmit} className="space-y-3">
+                                        {/* Type Toggle */}
+                                        <div className="grid grid-cols-2 gap-2">
                                             <Button
                                                 type="button"
-                                                variant="outline"
+                                                variant={formData.type === "expense" ? "default" : "outline"}
                                                 size="sm"
-                                                onClick={() => {
-                                                    deleteCustomCategory(formData.type, formData.category);
-                                                    setFormData({ ...formData, category: "other" });
-                                                }}
-                                                className="px-2 text-muted-foreground hover:text-destructive hover:border-destructive"
+                                                onClick={() => setFormData({ ...formData, type: "expense" })}
                                             >
-                                                <IconTrash className="size-4" />
+                                                <IconArrowDown data-icon="inline-start" className="size-3.5" />
+                                                Expense
                                             </Button>
-                                        )}
-                                    </div>
+                                            <Button
+                                                type="button"
+                                                variant={formData.type === "income" ? "default" : "outline"}
+                                                size="sm"
+                                                onClick={() => setFormData({ ...formData, type: "income" })}
+                                            >
+                                                <IconArrowUp data-icon="inline-start" className="size-3.5" />
+                                                Income
+                                            </Button>
+                                        </div>
 
-                                    {/* Add Custom Category Form */}
-                                    {showAddCategory && (
-                                        <div className="p-2 bg-muted/50 rounded-md space-y-2">
-                                            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Pick an icon</p>
-                                            <div className="grid grid-cols-10 gap-1">
-                                                {iconOptions.map((icon) => (
-                                                    <button
-                                                        key={icon}
-                                                        type="button"
-                                                        onClick={() => setNewCategoryIcon(icon)}
-                                                        className={`size-7 flex items-center justify-center rounded-md text-sm transition-colors hover:bg-muted ${newCategoryIcon === icon ? "bg-primary/20 ring-1 ring-primary" : ""}`}
-                                                    >
-                                                        {icon}
-                                                    </button>
-                                                ))}
-                                            </div>
+                                        {/* Description & Amount */}
+                                        <div className="grid grid-cols-2 gap-2">
                                             <Input
-                                                placeholder="Category name"
-                                                value={newCategoryName}
-                                                onChange={(e) => setNewCategoryName(e.target.value)}
-                                                className="w-full"
+                                                placeholder="Description"
+                                                value={formData.description}
+                                                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                                             />
-                                            <div className="flex gap-2">
+                                            <Input
+                                                type="text"
+                                                inputMode="numeric"
+                                                placeholder="Amount"
+                                                value={formData.amount ? Number(formData.amount).toLocaleString() : ""}
+                                                onChange={(e) => {
+                                                    // Remove all non-digit characters except decimal point
+                                                    const raw = e.target.value.replace(/[^0-9.]/g, "");
+                                                    // Ensure only one decimal point
+                                                    const parts = raw.split(".");
+                                                    const cleaned = parts.length > 2
+                                                        ? parts[0] + "." + parts.slice(1).join("")
+                                                        : raw;
+                                                    setFormData({ ...formData, amount: cleaned });
+                                                }}
+                                            />
+                                        </div>
+
+                                        {/* Category */}
+                                        <div className="flex gap-2">
+                                            <Select
+                                                value={formData.category}
+                                                onValueChange={(value) => {
+                                                    if (value === "__add_new__") {
+                                                        setShowAddCategory(true);
+                                                    } else {
+                                                        setFormData({ ...formData, category: value });
+                                                    }
+                                                }}
+                                            >
+                                                <SelectTrigger className="flex-1">
+                                                    <SelectValue placeholder="Category" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {getCategories(formData.type).map((category: Category) => (
+                                                        <SelectItem key={category.id} value={category.id}>
+                                                            <span className="flex items-center gap-2">
+                                                                <span>{category.icon}</span>
+                                                                <span>{category.name}</span>
+                                                                {category.id.startsWith("custom_") && (
+                                                                    <span className="text-[9px] px-1 py-0.5 rounded bg-muted text-muted-foreground">custom</span>
+                                                                )}
+                                                            </span>
+                                                        </SelectItem>
+                                                    ))}
+                                                    <SelectItem value="__add_new__">
+                                                        <span className="flex items-center gap-2 text-primary">
+                                                            <span>➕</span>
+                                                            <span>Add Custom Category</span>
+                                                        </span>
+                                                    </SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                            {/* Delete custom category button */}
+                                            {formData.category.startsWith("custom_") && (
                                                 <Button
                                                     type="button"
                                                     variant="outline"
                                                     size="sm"
-                                                    className="flex-1"
                                                     onClick={() => {
-                                                        setShowAddCategory(false);
-                                                        setNewCategoryName("");
-                                                        setNewCategoryIcon("📌");
+                                                        deleteCustomCategory(formData.type, formData.category);
+                                                        setFormData({ ...formData, category: "other" });
                                                     }}
+                                                    className="px-2 text-muted-foreground hover:text-destructive hover:border-destructive"
                                                 >
-                                                    Cancel
+                                                    <IconTrash className="size-4" />
                                                 </Button>
-                                                <Button
-                                                    type="button"
-                                                    size="sm"
-                                                    className="flex-1"
-                                                    onClick={async () => {
-                                                        if (newCategoryName.trim()) {
-                                                            const cat = await addCustomCategory(formData.type, {
-                                                                name: newCategoryName.trim(),
-                                                                icon: newCategoryIcon || "📌",
-                                                                color: "oklch(0.55 0.15 200)",
-                                                            });
-                                                            setFormData({ ...formData, category: cat.id });
+                                            )}
+                                        </div>
+
+                                        {/* Add Custom Category Form */}
+                                        {showAddCategory && (
+                                            <div className="p-2 bg-muted/50 rounded-md space-y-2">
+                                                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Pick an icon</p>
+                                                <div className="grid grid-cols-10 gap-1">
+                                                    {iconOptions.map((icon) => (
+                                                        <button
+                                                            key={icon}
+                                                            type="button"
+                                                            onClick={() => setNewCategoryIcon(icon)}
+                                                            className={`size-7 flex items-center justify-center rounded-md text-sm transition-colors hover:bg-muted ${newCategoryIcon === icon ? "bg-primary/20 ring-1 ring-primary" : ""}`}
+                                                        >
+                                                            {icon}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                                <Input
+                                                    placeholder="Category name"
+                                                    value={newCategoryName}
+                                                    onChange={(e) => setNewCategoryName(e.target.value)}
+                                                    className="w-full"
+                                                />
+                                                <div className="flex gap-2">
+                                                    <Button
+                                                        type="button"
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="flex-1"
+                                                        onClick={() => {
                                                             setShowAddCategory(false);
                                                             setNewCategoryName("");
                                                             setNewCategoryIcon("📌");
-                                                        }
-                                                    }}
-                                                >
-                                                    Add
+                                                        }}
+                                                    >
+                                                        Cancel
+                                                    </Button>
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        className="flex-1"
+                                                        onClick={async () => {
+                                                            if (newCategoryName.trim()) {
+                                                                const cat = await addCustomCategory(formData.type, {
+                                                                    name: newCategoryName.trim(),
+                                                                    icon: newCategoryIcon || "📌",
+                                                                    color: "oklch(0.55 0.15 200)",
+                                                                });
+                                                                setFormData({ ...formData, category: cat.id });
+                                                                setShowAddCategory(false);
+                                                                setNewCategoryName("");
+                                                                setNewCategoryIcon("📌");
+                                                            }
+                                                        }}
+                                                    >
+                                                        Add
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Actions - Only show when not adding custom category */}
+                                        {!showAddCategory && (
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <Button type="button" variant="outline" size="sm" onClick={() => { setShowAddForm(false); setEditingId(null); }}>
+                                                    Cancel
+                                                </Button>
+                                                <Button type="submit" size="sm">
+                                                    {editingId ? "Save" : "Add"}
                                                 </Button>
                                             </div>
-                                        </div>
-                                    )}
+                                        )}
+                                    </form>
+                                </CardContent>
+                            </Card>
+                        )}
 
-                                    {/* Actions - Only show when not adding custom category */}
-                                    {!showAddCategory && (
-                                        <div className="grid grid-cols-2 gap-2">
-                                            <Button type="button" variant="outline" size="sm" onClick={() => { setShowAddForm(false); setEditingId(null); }}>
-                                                Cancel
-                                            </Button>
-                                            <Button type="submit" size="sm">
-                                                {editingId ? "Save" : "Add"}
-                                            </Button>
-                                        </div>
-                                    )}
-                                </form>
-                            </CardContent>
-                        </Card>
-                    )}
+                        {/* Spending by Category */}
+                        {expensesByCategory.length > 0 && (
+                            <Card className="bg-card/60">
+                                <CardContent className="p-3 space-y-2">
+                                    <div className="flex items-center gap-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                                        <span>📊</span>
+                                        <span>Categories</span>
+                                    </div>
+                                    <div className="space-y-2">
+                                        {expensesByCategory.slice(0, 4).map(({ category, amount }) => {
+                                            const categoryInfo = getCategoryInfo(category);
+                                            const percentage = expenses > 0 ? (amount / expenses) * 100 : 0;
 
-                    {/* Spending by Category */}
-                    {expensesByCategory.length > 0 && (
+                                            return (
+                                                <div key={category} className="space-y-1">
+                                                    <div className="flex items-center justify-between text-xs">
+                                                        <span className="flex items-center gap-1.5">
+                                                            <span>{categoryInfo.icon}</span>
+                                                            <span className="font-medium truncate">{categoryInfo.name}</span>
+                                                        </span>
+                                                        <span className="text-muted-foreground tabular-nums text-[11px]">
+                                                            {formatCurrency(amount, currency)}
+                                                        </span>
+                                                    </div>
+                                                    <div className="h-1 bg-muted rounded-full overflow-hidden">
+                                                        <div
+                                                            className="h-full rounded-full transition-all duration-300"
+                                                            style={{
+                                                                width: `${percentage}%`,
+                                                                backgroundColor: categoryInfo.color,
+                                                            }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )}
+
+                        {/* Recent Transactions */}
                         <Card className="bg-card/60">
-                            <CardContent className="p-3 space-y-2">
-                                <div className="flex items-center gap-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
-                                    <span>📊</span>
-                                    <span>Categories</span>
-                                </div>
-                                <div className="space-y-2">
-                                    {expensesByCategory.slice(0, 4).map(({ category, amount }) => {
-                                        const categoryInfo = getCategoryInfo(category);
-                                        const percentage = expenses > 0 ? (amount / expenses) * 100 : 0;
-
-                                        return (
-                                            <div key={category} className="space-y-1">
-                                                <div className="flex items-center justify-between text-xs">
-                                                    <span className="flex items-center gap-1.5">
-                                                        <span>{categoryInfo.icon}</span>
-                                                        <span className="font-medium truncate">{categoryInfo.name}</span>
-                                                    </span>
-                                                    <span className="text-muted-foreground tabular-nums text-[11px]">
-                                                        {formatCurrency(amount, currency)}
-                                                    </span>
-                                                </div>
-                                                <div className="h-1 bg-muted rounded-full overflow-hidden">
-                                                    <div
-                                                        className="h-full rounded-full transition-all duration-300"
-                                                        style={{
-                                                            width: `${percentage}%`,
-                                                            backgroundColor: categoryInfo.color,
-                                                        }}
-                                                    />
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </CardContent>
-                        </Card>
-                    )}
-
-                    {/* Recent Transactions */}
-                    <Card className="bg-card/60">
-                        <CardContent className="p-3">
-                            <div className="flex items-center justify-between mb-2">
-                                <div className="flex items-center gap-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
-                                    <span>📋</span>
-                                    <span>Recent</span>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                    {/* Theme Toggle */}
-                                    <Tooltip content={isDarkMode ? "Light Mode" : "Dark Mode"} side="left">
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => {
-                                                const newDarkMode = !isDarkMode;
-                                                setIsDarkMode(newDarkMode);
-                                                if (newDarkMode) {
-                                                    document.documentElement.classList.add("dark");
-                                                    localStorage.setItem("money-drain-theme", "dark");
-                                                } else {
-                                                    document.documentElement.classList.remove("dark");
-                                                    localStorage.setItem("money-drain-theme", "light");
-                                                }
-                                            }}
-                                            className="h-6 px-2 text-muted-foreground hover:text-foreground"
-                                        >
-                                            {isDarkMode
-                                                ? <IconSun className="size-3" />
-                                                : <IconMoon className="size-3" />}
-                                        </Button>
-                                    </Tooltip>
-
-                                    {/* Export Button */}
-                                    {transactions.length > 0 && (
-                                        <Tooltip content="Export CSV">
+                            <CardContent className="p-3">
+                                <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                                        <span>📋</span>
+                                        <span>Recent</span>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                        {/* Theme Toggle */}
+                                        <Tooltip content={isDarkMode ? "Light Mode" : "Dark Mode"} side="left">
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
                                                 onClick={() => {
-                                                    const headers = ["Date", "Description", "Category", "Type", "Amount"];
-                                                    const rows = transactions.map((t: Transaction) => [
-                                                        new Date(t.date).toLocaleDateString(),
-                                                        t.description,
-                                                        t.category,
-                                                        t.type,
-                                                        t.amount.toString()
-                                                    ]);
-                                                    const csv = [headers, ...rows].map(row => row.join(",")).join("\n");
-                                                    const blob = new Blob([csv], { type: "text/csv" });
-                                                    const url = URL.createObjectURL(blob);
-                                                    const a = document.createElement("a");
-                                                    a.href = url;
-                                                    a.download = `money-drain-account${selectedAccount}-${new Date().toISOString().split("T")[0]}.csv`;
-                                                    a.click();
-                                                    URL.revokeObjectURL(url);
+                                                    const newDarkMode = !isDarkMode;
+                                                    setIsDarkMode(newDarkMode);
+                                                    if (newDarkMode) {
+                                                        document.documentElement.classList.add("dark");
+                                                        localStorage.setItem("money-drain-theme", "dark");
+                                                    } else {
+                                                        document.documentElement.classList.remove("dark");
+                                                        localStorage.setItem("money-drain-theme", "light");
+                                                    }
                                                 }}
                                                 className="h-6 px-2 text-muted-foreground hover:text-foreground"
                                             >
-                                                <IconDownload className="size-3" />
+                                                {isDarkMode
+                                                    ? <IconSun className="size-3" />
+                                                    : <IconMoon className="size-3" />}
                                             </Button>
                                         </Tooltip>
-                                    )}
 
-                                    {/* Clear All */}
-                                    {recentTransactions.length > 0 && (
-                                        <AlertDialog>
-                                            <AlertDialogTrigger asChild>
+                                        {/* Export Button */}
+                                        {transactions.length > 0 && (
+                                            <Tooltip content="Export CSV">
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"
-                                                    className="h-6 px-2 text-muted-foreground hover:text-destructive"
+                                                    onClick={() => {
+                                                        const headers = ["Date", "Description", "Category", "Type", "Amount"];
+                                                        const rows = transactions.map((t: Transaction) => [
+                                                            new Date(t.date).toLocaleDateString(),
+                                                            t.description,
+                                                            t.category,
+                                                            t.type,
+                                                            t.amount.toString()
+                                                        ]);
+                                                        const csv = [headers, ...rows].map(row => row.join(",")).join("\n");
+                                                        const blob = new Blob([csv], { type: "text/csv" });
+                                                        const url = URL.createObjectURL(blob);
+                                                        const a = document.createElement("a");
+                                                        a.href = url;
+                                                        a.download = `money-drain-account${selectedAccount}-${new Date().toISOString().split("T")[0]}.csv`;
+                                                        a.click();
+                                                        URL.revokeObjectURL(url);
+                                                    }}
+                                                    className="h-6 px-2 text-muted-foreground hover:text-foreground"
                                                 >
-                                                    <IconTrash className="size-3" />
+                                                    <IconDownload className="size-3" />
                                                 </Button>
-                                            </AlertDialogTrigger>
-                                            <AlertDialogContent size="sm">
-                                                <AlertDialogHeader>
-                                                    <AlertDialogTitle>Clear All Transactions?</AlertDialogTitle>
-                                                    <AlertDialogDescription>
-                                                        <span className="block">This will permanently delete all {transactions.length} transaction(s) in Account {selectedAccount}.</span>
-                                                        <span className="block mt-2 font-medium text-destructive">⚠️ This action cannot be undone!</span>
-                                                    </AlertDialogDescription>
-                                                </AlertDialogHeader>
-                                                <AlertDialogFooter>
-                                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                                    <AlertDialogAction variant="destructive" onClick={clearAllTransactions}>
-                                                        Yes, Clear All
-                                                    </AlertDialogAction>
-                                                </AlertDialogFooter>
-                                            </AlertDialogContent>
-                                        </AlertDialog>
-                                    )}
-                                </div>
-                            </div>
-                            {recentTransactions.length === 0 ? (
-                                <div className="text-center py-6">
-                                    <div className="size-10 rounded-full bg-muted mx-auto mb-2 flex items-center justify-center">
-                                        <IconWallet className="size-4 text-muted-foreground" />
+                                            </Tooltip>
+                                        )}
+
+                                        {/* Clear All */}
+                                        {recentTransactions.length > 0 && (
+                                            <AlertDialog>
+                                                <AlertDialogTrigger asChild>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="h-6 px-2 text-muted-foreground hover:text-destructive"
+                                                    >
+                                                        <IconTrash className="size-3" />
+                                                    </Button>
+                                                </AlertDialogTrigger>
+                                                <AlertDialogContent size="sm">
+                                                    <AlertDialogHeader>
+                                                        <AlertDialogTitle>Clear All Transactions?</AlertDialogTitle>
+                                                        <AlertDialogDescription>
+                                                            <span className="block">This will permanently delete all {transactions.length} transaction(s) in Account {selectedAccount}.</span>
+                                                            <span className="block mt-2 font-medium text-destructive">⚠️ This action cannot be undone!</span>
+                                                        </AlertDialogDescription>
+                                                    </AlertDialogHeader>
+                                                    <AlertDialogFooter>
+                                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                        <AlertDialogAction variant="destructive" onClick={clearAllTransactions}>
+                                                            Yes, Clear All
+                                                        </AlertDialogAction>
+                                                    </AlertDialogFooter>
+                                                </AlertDialogContent>
+                                            </AlertDialog>
+                                        )}
                                     </div>
-                                    <p className="text-xs text-muted-foreground">No transactions</p>
                                 </div>
-                            ) : (
-                                <div className="space-y-0.5">
-                                    {recentTransactions.map((transaction, index) => {
-                                        const dateLabel = getDateLabel(transaction.date);
-                                        const prevTransaction = index > 0 ? recentTransactions[index - 1] : null;
-                                        const prevDateLabel = prevTransaction ? getDateLabel(prevTransaction.date) : null;
-                                        const showDateSpacer = dateLabel !== prevDateLabel;
+                                {recentTransactions.length === 0 ? (
+                                    <div className="text-center py-6">
+                                        <div className="size-10 rounded-full bg-muted mx-auto mb-2 flex items-center justify-center">
+                                            <IconWallet className="size-4 text-muted-foreground" />
+                                        </div>
+                                        <p className="text-xs text-muted-foreground">No transactions</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-0.5">
+                                        {recentTransactions.map((transaction, index) => {
+                                            const dateLabel = getDateLabel(transaction.date);
+                                            const prevTransaction = index > 0 ? recentTransactions[index - 1] : null;
+                                            const prevDateLabel = prevTransaction ? getDateLabel(prevTransaction.date) : null;
+                                            const showDateSpacer = dateLabel !== prevDateLabel;
 
-                                        return (
-                                            <div key={transaction.id}>
-                                                {showDateSpacer && (
-                                                    <div className="py-2 first:pt-0">
-                                                        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
-                                                            {dateLabel}
-                                                        </p>
-                                                    </div>
-                                                )}
-                                                <TransactionItem
-                                                    transaction={transaction}
-                                                    categoryInfo={getCategoryInfo(transaction.category)}
-                                                    currency={currency}
-                                                    onEdit={() => startEdit(transaction)}
-                                                    onDelete={() => deleteTransaction(transaction.id)}
-                                                />
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                        </CardContent>
-                    </Card>
+                                            return (
+                                                <div key={transaction.id}>
+                                                    {showDateSpacer && (
+                                                        <div className="py-2 first:pt-0">
+                                                            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+                                                                {dateLabel}
+                                                            </p>
+                                                        </div>
+                                                    )}
+                                                    <TransactionItem
+                                                        transaction={transaction}
+                                                        categoryInfo={getCategoryInfo(transaction.category)}
+                                                        currency={currency}
+                                                        onEdit={() => startEdit(transaction)}
+                                                        onDelete={() => deleteTransaction(transaction.id)}
+                                                    />
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
 
-                    {/* Auth Button */}
-                    <AuthButton />
+                        {/* Auth Button */}
+                        <AuthButton />
+                    </div>
                 </div>
-            </div>
+            )}
         </>
     );
 }
@@ -888,9 +948,7 @@ function AuthButton() {
                 <CardContent className="p-3">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                            <div className="size-8 rounded-full bg-primary/10 flex items-center justify-center text-sm">
-                                {user?.firstName?.[0] || user?.emailAddresses?.[0]?.emailAddress?.[0] || "U"}
-                            </div>
+                            <UserButton />
                             <div className="text-xs">
                                 <p className="font-medium">{user?.firstName || "User"}</p>
                                 <p className="text-muted-foreground text-[10px]">{user?.emailAddresses?.[0]?.emailAddress}</p>

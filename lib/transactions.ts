@@ -129,7 +129,7 @@ export function filterTransactionsByPeriod(
             startDate.setHours(0, 0, 0, 0);
             break;
         case "month":
-            startDate.setDate(1);
+            startDate.setMonth(startDate.getMonth() - 1);
             startDate.setHours(0, 0, 0, 0);
             break;
         case "6months":
