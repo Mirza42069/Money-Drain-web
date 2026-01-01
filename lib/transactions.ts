@@ -113,7 +113,12 @@ export function generateId(): string {
     return Math.random().toString(36).substring(2, 9);
 }
 
-export type FilterPeriod = "day" | "month" | "6months" | "year" | "all";
+// Filter periods: days (1-6), months (1-6), years (1-5), all
+export type FilterPeriod =
+    | "1d" | "2d" | "3d" | "4d" | "5d" | "6d"
+    | "1m" | "2m" | "3m" | "4m" | "5m" | "6m"
+    | "1y" | "2y" | "3y" | "4y" | "5y"
+    | "all";
 
 export function filterTransactionsByPeriod(
     transactions: Transaction[],
@@ -124,20 +129,24 @@ export function filterTransactionsByPeriod(
     const now = new Date();
     const startDate = new Date();
 
-    switch (period) {
-        case "day":
+    // Parse period type and value
+    const periodType = period.slice(-1); // 'd', 'm', or 'y'
+    const periodValue = parseInt(period.slice(0, -1), 10);
+
+    switch (periodType) {
+        case "d":
+            // Days: subtract (periodValue - 1) days and set to start of day
+            startDate.setDate(startDate.getDate() - (periodValue - 1));
             startDate.setHours(0, 0, 0, 0);
             break;
-        case "month":
-            startDate.setMonth(startDate.getMonth() - 1);
+        case "m":
+            // Months: subtract periodValue months
+            startDate.setMonth(startDate.getMonth() - periodValue);
             startDate.setHours(0, 0, 0, 0);
             break;
-        case "6months":
-            startDate.setMonth(startDate.getMonth() - 6);
-            startDate.setHours(0, 0, 0, 0);
-            break;
-        case "year":
-            startDate.setFullYear(startDate.getFullYear() - 1);
+        case "y":
+            // Years: subtract periodValue years
+            startDate.setFullYear(startDate.getFullYear() - periodValue);
             startDate.setHours(0, 0, 0, 0);
             break;
     }

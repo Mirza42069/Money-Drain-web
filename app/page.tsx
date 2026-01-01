@@ -19,6 +19,8 @@ import {
     IconMoon,
     IconLock,
     IconSettings,
+    IconCrown,
+    IconChevronDown,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -41,6 +43,17 @@ import {
     AlertDialogTitle,
     AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+    DropdownMenuSub,
+    DropdownMenuSubTrigger,
+    DropdownMenuSubContent,
+    DropdownMenuSeparator,
+    DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useTransactions, Transaction } from "@/hooks/use-transactions";
 import {
@@ -61,17 +74,31 @@ const currencyLabels: Record<CurrencyType, string> = {
     USD: "$",
 };
 
-const periodOrder: FilterPeriod[] = ["all", "day", "month", "6months", "year"];
+// All period options organized by category
+const dayPeriods: FilterPeriod[] = ["1d", "2d", "3d", "4d", "5d", "6d"];
+const monthPeriods: FilterPeriod[] = ["1m", "2m", "3m", "4m", "5m", "6m"];
+const yearPeriods: FilterPeriod[] = ["1y", "2y", "3y", "4y", "5y"];
+
 const periodLabels: Record<FilterPeriod, string> = {
-    all: "All",
-    day: "1D",
-    month: "1M",
-    "6months": "6M",
-    year: "1Y",
+    "1d": "1 Day", "2d": "2 Days", "3d": "3 Days", "4d": "4 Days", "5d": "5 Days", "6d": "6 Days",
+    "1m": "1 Month", "2m": "2 Months", "3m": "3 Months", "4m": "4 Months", "5m": "5 Months", "6m": "6 Months",
+    "1y": "1 Year", "2y": "2 Years", "3y": "3 Years", "4y": "4 Years", "5y": "5 Years",
+    all: "All Time",
 };
 
-// Premium-locked filter periods
-const premiumFilters: FilterPeriod[] = ["year", "all"];
+// Short labels for button display
+const periodShortLabels: Record<FilterPeriod, string> = {
+    "1d": "1D", "2d": "2D", "3d": "3D", "4d": "4D", "5d": "5D", "6d": "6D",
+    "1m": "1M", "2m": "2M", "3m": "3M", "4m": "4M", "5m": "5M", "6m": "6M",
+    "1y": "1Y", "2y": "2Y", "3y": "3Y", "4y": "4Y", "5y": "5Y",
+    all: "All",
+};
+
+// Premium-locked filter periods (all year options + all time)
+const premiumFilters: FilterPeriod[] = [...yearPeriods, "all"];
+
+// All periods for validation
+const allPeriods: FilterPeriod[] = [...dayPeriods, ...monthPeriods, ...yearPeriods, "all"];
 
 // Icon options for custom categories
 const iconOptions = [
@@ -126,7 +153,7 @@ export default function MoneyDrain() {
     const [showAddForm, setShowAddForm] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [currency, setCurrency] = useState<CurrencyType>("IDR");
-    const [filterPeriod, setFilterPeriod] = useState<FilterPeriod>("all");
+    const [filterPeriod, setFilterPeriod] = useState<FilterPeriod>("1d");
     const [pendingCurrency, setPendingCurrency] = useState<CurrencyType | null>(null);
     const [showConvertDialog, setShowConvertDialog] = useState(false);
     const [formData, setFormData] = useState({
@@ -168,7 +195,7 @@ export default function MoneyDrain() {
             if (savedCurrency && currencyOrder.includes(savedCurrency)) {
                 setCurrency(savedCurrency);
             }
-            if (savedPeriod && periodOrder.includes(savedPeriod)) {
+            if (savedPeriod && allPeriods.includes(savedPeriod)) {
                 setFilterPeriod(savedPeriod);
             }
         }
@@ -187,20 +214,6 @@ export default function MoneyDrain() {
         }
     }, [filterPeriod, mounted]);
 
-    // Cycle currency - shows conversion dialog if there are transactions
-    const cycleCurrency = () => {
-        const currentIndex = currencyOrder.indexOf(currency);
-        const nextIndex = (currentIndex + 1) % currencyOrder.length;
-        const newCurrency = currencyOrder[nextIndex];
-
-        if (transactions.length > 0) {
-            setPendingCurrency(newCurrency);
-            setShowConvertDialog(true);
-        } else {
-            setCurrency(newCurrency);
-        }
-    };
-
     // Handle currency conversion dialog response
     const handleConvertResponse = (convert: boolean) => {
         if (pendingCurrency) {
@@ -213,25 +226,21 @@ export default function MoneyDrain() {
         setShowConvertDialog(false);
     };
 
-    // Cycle period - with premium filter gating
-    const cyclePeriod = () => {
-        const currentIndex = periodOrder.indexOf(filterPeriod);
-        const nextIndex = (currentIndex + 1) % periodOrder.length;
-        const nextPeriod = periodOrder[nextIndex];
-
-        // Check if next period is premium-locked
-        if (premiumFilters.includes(nextPeriod) && !hasPremiumAccess) {
+    // Handle period selection from dropdown - with premium filter gating
+    const handlePeriodSelect = (period: FilterPeriod) => {
+        // Check if selected period is premium-locked
+        if (premiumFilters.includes(period) && !hasPremiumAccess) {
             setShowPricingView(true);
             return;
         }
 
-        setFilterPeriod(nextPeriod);
+        setFilterPeriod(period);
     };
 
     // Handle closing pricing view - reset to 1D filter
     const handleClosePricingView = () => {
         setShowPricingView(false);
-        setFilterPeriod("day");
+        setFilterPeriod("1d");
     };
 
     // Filter transactions by period
@@ -271,11 +280,32 @@ export default function MoneyDrain() {
             .sort((a, b) => b.amount - a.amount);
     }, [filteredTransactions]);
 
+    const incomeByCategory = useMemo(() => {
+        const incomeItems = filteredTransactions.filter((t) => t.type === "income");
+        const categoryTotals: Record<string, number> = {};
+
+        incomeItems.forEach((t) => {
+            categoryTotals[t.category] = (categoryTotals[t.category] || 0) + t.amount;
+        });
+
+        return Object.entries(categoryTotals)
+            .map(([category, amount]) => ({ category, amount }))
+            .sort((a, b) => b.amount - a.amount);
+    }, [filteredTransactions]);
+
     const recentTransactions = useMemo(() => {
         return [...filteredTransactions]
             .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-            .slice(0, 10);
+            .slice(0, 20);
     }, [filteredTransactions]);
+
+    const [showAllTransactions, setShowAllTransactions] = useState(false);
+    const [categoryViewFilter, setCategoryViewFilter] = useState<"all" | "expense" | "income">("all");
+    const VISIBLE_TRANSACTIONS = 5;
+    const displayedTransactions = showAllTransactions
+        ? recentTransactions
+        : recentTransactions.slice(0, VISIBLE_TRANSACTIONS);
+    const hiddenCount = recentTransactions.length - VISIBLE_TRANSACTIONS;
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -409,18 +439,41 @@ export default function MoneyDrain() {
                     <div className="max-w-md mx-auto space-y-3">
                         {/* Top Bar - Currency, Account & Filter */}
                         <div className="flex items-center justify-between">
-                            {/* Currency Cycle Button */}
-                            <Tooltip content={`Currency: ${currency}`}>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={cycleCurrency}
-                                    className="gap-1.5 font-semibold min-w-[60px]"
-                                >
-                                    <IconCoin className="size-3.5" />
-                                    {currencyLabels[currency]}
-                                </Button>
-                            </Tooltip>
+                            {/* Currency Dropdown */}
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="gap-1.5 font-semibold min-w-[70px]"
+                                    >
+                                        <IconCoin className="size-3.5" />
+                                        {currencyLabels[currency]}
+                                        <IconChevronDown className="size-3 ml-0.5" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="start">
+                                    {currencyOrder.map((curr) => (
+                                        <DropdownMenuItem
+                                            key={curr}
+                                            onClick={() => {
+                                                if (curr !== currency) {
+                                                    if (transactions.length > 0) {
+                                                        setPendingCurrency(curr);
+                                                        setShowConvertDialog(true);
+                                                    } else {
+                                                        setCurrency(curr);
+                                                    }
+                                                }
+                                            }}
+                                            className={`flex items-center gap-2 ${currency === curr ? 'bg-accent' : ''}`}
+                                        >
+                                            <span className="font-semibold w-6">{currencyLabels[curr]}</span>
+                                            <span className="text-muted-foreground">{curr}</span>
+                                        </DropdownMenuItem>
+                                    ))}
+                                </DropdownMenuContent>
+                            </DropdownMenu>
 
                             {/* Account Storage Buttons */}
                             <div className="flex items-center gap-1">
@@ -438,22 +491,117 @@ export default function MoneyDrain() {
                                 ))}
                             </div>
 
-                            {/* Period Cycle Button */}
-                            <Tooltip content={`Filter: ${periodLabels[filterPeriod]}${!hasPremiumAccess && premiumFilters.includes(periodOrder[(periodOrder.indexOf(filterPeriod) + 1) % periodOrder.length]) ? " (Premium)" : ""}`}>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={cyclePeriod}
-                                    className="gap-1.5 font-semibold min-w-[60px]"
-                                >
-                                    {!hasPremiumAccess && premiumFilters.includes(periodOrder[(periodOrder.indexOf(filterPeriod) + 1) % periodOrder.length]) ? (
-                                        <IconLock className="size-3.5 text-amber-500" />
-                                    ) : (
+                            {/* Period Filter Dropdown */}
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="gap-1.5 font-semibold min-w-[70px]"
+                                    >
                                         <IconClock className="size-3.5" />
-                                    )}
-                                    {periodLabels[filterPeriod]}
-                                </Button>
-                            </Tooltip>
+                                        {periodShortLabels[filterPeriod]}
+                                        <IconChevronDown className="size-3 ml-0.5" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-48">
+                                    {/* Days Submenu */}
+                                    <DropdownMenuSub>
+                                        <DropdownMenuSubTrigger>
+                                            <span className="flex items-center gap-2">
+                                                Days
+                                                {dayPeriods.includes(filterPeriod) && (
+                                                    <span className="text-[9px] px-1 py-0.5 rounded bg-primary/20 text-primary">Active</span>
+                                                )}
+                                            </span>
+                                        </DropdownMenuSubTrigger>
+                                        <DropdownMenuSubContent>
+                                            {dayPeriods.map((period) => (
+                                                <DropdownMenuItem
+                                                    key={period}
+                                                    onClick={() => handlePeriodSelect(period)}
+                                                    className={filterPeriod === period ? 'bg-accent' : ''}
+                                                >
+                                                    {periodLabels[period]}
+                                                </DropdownMenuItem>
+                                            ))}
+                                        </DropdownMenuSubContent>
+                                    </DropdownMenuSub>
+
+                                    {/* Months Submenu */}
+                                    <DropdownMenuSub>
+                                        <DropdownMenuSubTrigger>
+                                            <span className="flex items-center gap-2">
+                                                Months
+                                                {monthPeriods.includes(filterPeriod) && (
+                                                    <span className="text-[9px] px-1 py-0.5 rounded bg-primary/20 text-primary">Active</span>
+                                                )}
+                                            </span>
+                                        </DropdownMenuSubTrigger>
+                                        <DropdownMenuSubContent>
+                                            {monthPeriods.map((period) => (
+                                                <DropdownMenuItem
+                                                    key={period}
+                                                    onClick={() => handlePeriodSelect(period)}
+                                                    className={filterPeriod === period ? 'bg-accent' : ''}
+                                                >
+                                                    {periodLabels[period]}
+                                                </DropdownMenuItem>
+                                            ))}
+                                        </DropdownMenuSubContent>
+                                    </DropdownMenuSub>
+
+                                    <DropdownMenuSeparator />
+
+                                    {/* Years Submenu (Premium) */}
+                                    <DropdownMenuSub>
+                                        <DropdownMenuSubTrigger>
+                                            <span className="flex items-center gap-2">
+                                                Years
+                                                <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-500 font-medium">
+                                                    <IconCrown className="size-2.5" />
+                                                    Premium
+                                                </span>
+                                                {yearPeriods.includes(filterPeriod) && (
+                                                    <span className="text-[9px] px-1 py-0.5 rounded bg-primary/20 text-primary">Active</span>
+                                                )}
+                                            </span>
+                                        </DropdownMenuSubTrigger>
+                                        <DropdownMenuSubContent>
+                                            {yearPeriods.map((period) => {
+                                                const isLocked = !hasPremiumAccess;
+                                                return (
+                                                    <DropdownMenuItem
+                                                        key={period}
+                                                        onClick={() => handlePeriodSelect(period)}
+                                                        className={`flex items-center justify-between ${filterPeriod === period ? 'bg-accent' : ''}`}
+                                                    >
+                                                        {periodLabels[period]}
+                                                        {isLocked && <IconLock className="size-3 text-amber-500" />}
+                                                    </DropdownMenuItem>
+                                                );
+                                            })}
+                                        </DropdownMenuSubContent>
+                                    </DropdownMenuSub>
+
+                                    <DropdownMenuSeparator />
+
+                                    {/* All Time (Premium) */}
+                                    <DropdownMenuItem
+                                        onClick={() => handlePeriodSelect("all")}
+                                        className={`flex items-center justify-between ${filterPeriod === "all" ? 'bg-accent' : ''}`}
+                                    >
+                                        <span className="flex items-center gap-2">
+                                            All Time
+                                            <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-500 font-medium">
+                                                <IconCrown className="size-2.5" />
+                                                Premium
+                                            </span>
+                                        </span>
+                                        {!hasPremiumAccess && <IconLock className="size-3 text-amber-500" />}
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
                         </div>
 
                         {/* Stats - With Labels */}
@@ -687,43 +835,127 @@ export default function MoneyDrain() {
                             </Card>
                         )}
 
-                        {/* Spending by Category */}
-                        {expensesByCategory.length > 0 && (
+                        {/* Categories - Expenses & Income */}
+                        {(expensesByCategory.length > 0 || incomeByCategory.length > 0) && (
                             <Card className="bg-card/60">
-                                <CardContent className="p-3 space-y-2">
-                                    <div className="flex items-center gap-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
-                                        <span>📊</span>
-                                        <span>Categories</span>
+                                <CardContent className="p-3 space-y-3">
+                                    {/* Header with toggle buttons */}
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                                            <span>📊</span>
+                                            <span>Categories</span>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <Button
+                                                variant={categoryViewFilter === "all" ? "default" : "ghost"}
+                                                size="sm"
+                                                onClick={() => setCategoryViewFilter("all")}
+                                                className="h-6 px-2 text-[10px]"
+                                            >
+                                                All
+                                            </Button>
+                                            <Button
+                                                variant={categoryViewFilter === "expense" ? "default" : "ghost"}
+                                                size="sm"
+                                                onClick={() => setCategoryViewFilter("expense")}
+                                                className={`h-6 px-2 text-[10px] ${categoryViewFilter === "expense" ? "bg-rose-500 hover:bg-rose-600" : "text-rose-500 hover:text-rose-600"}`}
+                                            >
+                                                <IconTrendingDown className="size-3" />
+                                            </Button>
+                                            <Button
+                                                variant={categoryViewFilter === "income" ? "default" : "ghost"}
+                                                size="sm"
+                                                onClick={() => setCategoryViewFilter("income")}
+                                                className={`h-6 px-2 text-[10px] ${categoryViewFilter === "income" ? "bg-emerald-500 hover:bg-emerald-600" : "text-emerald-500 hover:text-emerald-600"}`}
+                                            >
+                                                <IconTrendingUp className="size-3" />
+                                            </Button>
+                                        </div>
                                     </div>
-                                    <div className="space-y-2">
-                                        {expensesByCategory.slice(0, 4).map(({ category, amount }) => {
-                                            const categoryInfo = getCategoryInfo(category);
-                                            const percentage = expenses > 0 ? (amount / expenses) * 100 : 0;
 
-                                            return (
-                                                <div key={category} className="space-y-1">
-                                                    <div className="flex items-center justify-between text-xs">
-                                                        <span className="flex items-center gap-1.5">
-                                                            <span>{categoryInfo.icon}</span>
-                                                            <span className="font-medium truncate">{categoryInfo.name}</span>
-                                                        </span>
-                                                        <span className="text-muted-foreground tabular-nums text-[11px]">
-                                                            {formatCurrency(amount, currency)}
-                                                        </span>
-                                                    </div>
-                                                    <div className="h-1 bg-muted rounded-full overflow-hidden">
-                                                        <div
-                                                            className="h-full rounded-full transition-all duration-300"
-                                                            style={{
-                                                                width: `${percentage}%`,
-                                                                backgroundColor: categoryInfo.color,
-                                                            }}
-                                                        />
-                                                    </div>
+                                    {/* Expense Categories */}
+                                    {(categoryViewFilter === "all" || categoryViewFilter === "expense") && expensesByCategory.length > 0 && (
+                                        <div className="space-y-2">
+                                            {categoryViewFilter === "all" && (
+                                                <div className="flex items-center gap-2 text-[10px] font-medium text-rose-500 uppercase tracking-wide">
+                                                    <IconTrendingDown className="size-3" />
+                                                    <span>Expenses</span>
                                                 </div>
-                                            );
-                                        })}
-                                    </div>
+                                            )}
+                                            <div className="space-y-2">
+                                                {expensesByCategory.slice(0, categoryViewFilter === "expense" ? 6 : 3).map(({ category, amount }) => {
+                                                    const categoryInfo = getCategoryInfo(category, "expense");
+                                                    const percentage = expenses > 0 ? (amount / expenses) * 100 : 0;
+
+                                                    return (
+                                                        <div key={category} className="space-y-1">
+                                                            <div className="flex items-center justify-between text-xs">
+                                                                <span className="flex items-center gap-1.5">
+                                                                    <span>{categoryInfo.icon}</span>
+                                                                    <span className="font-medium truncate">{categoryInfo.name}</span>
+                                                                </span>
+                                                                <span className="text-rose-500 tabular-nums text-[11px]">
+                                                                    {formatCurrency(amount, currency)}
+                                                                </span>
+                                                            </div>
+                                                            <div className="h-1 bg-muted rounded-full overflow-hidden">
+                                                                <div
+                                                                    className="h-full rounded-full transition-all duration-300 bg-rose-500"
+                                                                    style={{ width: `${percentage}%` }}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Income Categories */}
+                                    {(categoryViewFilter === "all" || categoryViewFilter === "income") && incomeByCategory.length > 0 && (
+                                        <div className="space-y-2">
+                                            {categoryViewFilter === "all" && (
+                                                <div className="flex items-center gap-2 text-[10px] font-medium text-emerald-500 uppercase tracking-wide">
+                                                    <IconTrendingUp className="size-3" />
+                                                    <span>Income</span>
+                                                </div>
+                                            )}
+                                            <div className="space-y-2">
+                                                {incomeByCategory.slice(0, categoryViewFilter === "income" ? 6 : 3).map(({ category, amount }) => {
+                                                    const categoryInfo = getCategoryInfo(category, "income");
+                                                    const percentage = income > 0 ? (amount / income) * 100 : 0;
+
+                                                    return (
+                                                        <div key={category} className="space-y-1">
+                                                            <div className="flex items-center justify-between text-xs">
+                                                                <span className="flex items-center gap-1.5">
+                                                                    <span>{categoryInfo.icon}</span>
+                                                                    <span className="font-medium truncate">{categoryInfo.name}</span>
+                                                                </span>
+                                                                <span className="text-emerald-500 tabular-nums text-[11px]">
+                                                                    {formatCurrency(amount, currency)}
+                                                                </span>
+                                                            </div>
+                                                            <div className="h-1 bg-muted rounded-full overflow-hidden">
+                                                                <div
+                                                                    className="h-full rounded-full transition-all duration-300 bg-emerald-500"
+                                                                    style={{ width: `${percentage}%` }}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Empty state for filtered view */}
+                                    {categoryViewFilter === "expense" && expensesByCategory.length === 0 && (
+                                        <p className="text-xs text-muted-foreground text-center py-2">No expenses in this period</p>
+                                    )}
+                                    {categoryViewFilter === "income" && incomeByCategory.length === 0 && (
+                                        <p className="text-xs text-muted-foreground text-center py-2">No income in this period</p>
+                                    )}
                                 </CardContent>
                             </Card>
                         )}
@@ -832,9 +1064,9 @@ export default function MoneyDrain() {
                                     </div>
                                 ) : (
                                     <div className="space-y-0.5">
-                                        {recentTransactions.map((transaction, index) => {
+                                        {displayedTransactions.map((transaction, index) => {
                                             const dateLabel = getDateLabel(transaction.date);
-                                            const prevTransaction = index > 0 ? recentTransactions[index - 1] : null;
+                                            const prevTransaction = index > 0 ? displayedTransactions[index - 1] : null;
                                             const prevDateLabel = prevTransaction ? getDateLabel(prevTransaction.date) : null;
                                             const showDateSpacer = dateLabel !== prevDateLabel;
 
@@ -857,6 +1089,28 @@ export default function MoneyDrain() {
                                                 </div>
                                             );
                                         })}
+                                        {/* Show more button */}
+                                        {!showAllTransactions && hiddenCount > 0 && (
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => setShowAllTransactions(true)}
+                                                className="w-full mt-2 text-xs text-muted-foreground hover:text-foreground"
+                                            >
+                                                +{hiddenCount} more transaction{hiddenCount > 1 ? 's' : ''}
+                                            </Button>
+                                        )}
+                                        {/* Show less button */}
+                                        {showAllTransactions && recentTransactions.length > VISIBLE_TRANSACTIONS && (
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => setShowAllTransactions(false)}
+                                                className="w-full mt-2 text-xs text-muted-foreground hover:text-foreground"
+                                            >
+                                                Show less
+                                            </Button>
+                                        )}
                                     </div>
                                 )}
                             </CardContent>
