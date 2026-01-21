@@ -9,6 +9,7 @@
  */
 
 import type * as categories from "../categories.js";
+import type * as migration from "../migration.js";
 import type * as transactions from "../transactions.js";
 
 import type {
@@ -19,6 +20,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   categories: typeof categories;
+  migration: typeof migration;
   transactions: typeof transactions;
 }>;
 

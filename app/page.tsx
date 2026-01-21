@@ -18,7 +18,6 @@ import {
     IconSun,
     IconMoon,
     IconLock,
-    IconSettings,
     IconCrown,
     IconChevronDown,
 } from "@tabler/icons-react";
@@ -52,7 +51,6 @@ import {
     DropdownMenuSubTrigger,
     DropdownMenuSubContent,
     DropdownMenuSeparator,
-    DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useTransactions, Transaction } from "@/hooks/use-transactions";
@@ -64,7 +62,6 @@ import {
     formatDate,
     filterTransactionsByPeriod,
     convertCurrency,
-    exchangeRates,
 } from "@/lib/transactions";
 
 const currencyOrder: CurrencyType[] = ["IDR", "JPY", "USD"];
@@ -144,10 +141,6 @@ export default function MoneyDrain() {
         getCategories,
         addCustomCategory,
         deleteCustomCategory,
-        balance: totalBalance,
-        income: totalIncome,
-        expenses: totalExpenses,
-        expensesByCategory: allExpensesByCategory,
     } = useTransactions(selectedAccount);
 
     const [showAddForm, setShowAddForm] = useState(false);
@@ -172,24 +165,20 @@ export default function MoneyDrain() {
     const { has, isLoaded } = useAuth();
     const hasPremiumAccess = isLoaded && (has?.({ plan: "premium" }) || has?.({ feature: "1_year_and_all_filter" }));
 
-    // Fix hydration and load theme - only render dynamic content after mount
+    // Hydration-safe mounting state
     useEffect(() => {
-        setMounted(true);
-        // Load saved theme preference (default to dark)
-        const savedTheme = localStorage.getItem("money-drain-theme");
-        const prefersDark = savedTheme !== "light";
-        setIsDarkMode(prefersDark);
-        if (prefersDark) {
-            document.documentElement.classList.add("dark");
-        } else {
-            document.documentElement.classList.remove("dark");
-        }
-    }, []);
-
-
-    // Load saved preferences from localStorage (only on client)
-    useEffect(() => {
-        if (typeof window !== "undefined") {
+        const timer = requestAnimationFrame(() => {
+            setMounted(true);
+            // Load saved theme preference (default to dark)
+            const savedTheme = localStorage.getItem("money-drain-theme");
+            const prefersDark = savedTheme !== "light";
+            setIsDarkMode(prefersDark);
+            if (prefersDark) {
+                document.documentElement.classList.add("dark");
+            } else {
+                document.documentElement.classList.remove("dark");
+            }
+            // Load saved preferences
             const savedCurrency = localStorage.getItem("money-drain-currency") as CurrencyType;
             const savedPeriod = localStorage.getItem("money-drain-period") as FilterPeriod;
             if (savedCurrency && currencyOrder.includes(savedCurrency)) {
@@ -198,7 +187,8 @@ export default function MoneyDrain() {
             if (savedPeriod && allPeriods.includes(savedPeriod)) {
                 setFilterPeriod(savedPeriod);
             }
-        }
+        });
+        return () => cancelAnimationFrame(timer);
     }, []);
 
     // Save preferences to localStorage
@@ -295,8 +285,7 @@ export default function MoneyDrain() {
 
     const recentTransactions = useMemo(() => {
         return [...filteredTransactions]
-            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-            .slice(0, 20);
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }, [filteredTransactions]);
 
     const [showAllTransactions, setShowAllTransactions] = useState(false);
@@ -355,8 +344,7 @@ export default function MoneyDrain() {
         setShowAddForm(true);
     };
 
-    const getCategoryInfo = (categoryId: string, type: "expense" | "income" = "expense") => {
-        const categories = getCategories(type);
+    const getCategoryInfo = (categoryId: string) => {
         const allCategories = [...getCategories("expense"), ...getCategories("income")];
         return (
             allCategories.find((c) => c.id === categoryId) ||
@@ -409,7 +397,7 @@ export default function MoneyDrain() {
                 <div className="min-h-screen bg-background p-4">
                     <div className="max-w-2xl mx-auto">
                         <div className="text-center mb-6">
-                            <div className="size-16 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center mx-auto mb-4">
+                            <div className="size-16 rounded-full bg-linear-to-br from-amber-400 to-orange-500 flex items-center justify-center mx-auto mb-4">
                                 <IconLock className="size-8 text-white" />
                             </div>
                             <h1 className="text-2xl font-bold mb-2">Upgrade to Premium</h1>
@@ -558,7 +546,7 @@ export default function MoneyDrain() {
                                         <DropdownMenuSubTrigger>
                                             <span className="flex items-center gap-2">
                                                 Years
-                                                <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-500 font-medium">
+                                                <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-linear-to-r from-amber-500/20 to-orange-500/20 text-amber-500 font-medium">
                                                     <IconCrown className="size-2.5" />
                                                     Premium
                                                 </span>
@@ -593,7 +581,7 @@ export default function MoneyDrain() {
                                     >
                                         <span className="flex items-center gap-2">
                                             All Time
-                                            <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-500 font-medium">
+                                            <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-linear-to-r from-amber-500/20 to-orange-500/20 text-amber-500 font-medium">
                                                 <IconCrown className="size-2.5" />
                                                 Premium
                                             </span>
@@ -884,7 +872,7 @@ export default function MoneyDrain() {
                                             )}
                                             <div className="space-y-2">
                                                 {expensesByCategory.slice(0, categoryViewFilter === "expense" ? 6 : 3).map(({ category, amount }) => {
-                                                    const categoryInfo = getCategoryInfo(category, "expense");
+                                                    const categoryInfo = getCategoryInfo(category);
                                                     const percentage = expenses > 0 ? (amount / expenses) * 100 : 0;
 
                                                     return (
@@ -922,7 +910,7 @@ export default function MoneyDrain() {
                                             )}
                                             <div className="space-y-2">
                                                 {incomeByCategory.slice(0, categoryViewFilter === "income" ? 6 : 3).map(({ category, amount }) => {
-                                                    const categoryInfo = getCategoryInfo(category, "income");
+                                                    const categoryInfo = getCategoryInfo(category);
                                                     const percentage = income > 0 ? (amount / income) * 100 : 0;
 
                                                     return (
@@ -1023,6 +1011,29 @@ export default function MoneyDrain() {
                                                 </Button>
                                             </Tooltip>
                                         )}
+
+                                        {/* Clear Local Cache */}
+                                        <Tooltip content="Clear Local Cache">
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => {
+                                                    // Clear all money-drain related localStorage
+                                                    const keysToRemove: string[] = [];
+                                                    for (let i = 0; i < localStorage.length; i++) {
+                                                        const key = localStorage.key(i);
+                                                        if (key && key.startsWith("money-drain")) {
+                                                            keysToRemove.push(key);
+                                                        }
+                                                    }
+                                                    keysToRemove.forEach(key => localStorage.removeItem(key));
+                                                    window.location.reload();
+                                                }}
+                                                className="h-6 px-2 text-muted-foreground hover:text-foreground"
+                                            >
+                                                🔄
+                                            </Button>
+                                        </Tooltip>
 
                                         {/* Clear All */}
                                         {recentTransactions.length > 0 && (
