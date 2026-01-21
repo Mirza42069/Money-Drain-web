@@ -1012,29 +1012,6 @@ export default function MoneyDrain() {
                                             </Tooltip>
                                         )}
 
-                                        {/* Clear Local Cache */}
-                                        <Tooltip content="Clear Local Cache">
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => {
-                                                    // Clear all money-drain related localStorage
-                                                    const keysToRemove: string[] = [];
-                                                    for (let i = 0; i < localStorage.length; i++) {
-                                                        const key = localStorage.key(i);
-                                                        if (key && key.startsWith("money-drain")) {
-                                                            keysToRemove.push(key);
-                                                        }
-                                                    }
-                                                    keysToRemove.forEach(key => localStorage.removeItem(key));
-                                                    window.location.reload();
-                                                }}
-                                                className="h-6 px-2 text-muted-foreground hover:text-foreground"
-                                            >
-                                                🔄
-                                            </Button>
-                                        </Tooltip>
-
                                         {/* Clear All */}
                                         {recentTransactions.length > 0 && (
                                             <AlertDialog>
