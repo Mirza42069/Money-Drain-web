@@ -126,6 +126,22 @@ const getDateLabel = (dateString: string): string => {
     }
 };
 
+const toDateInputValue = (dateString: string): string => {
+    const date = new Date(dateString);
+    const offsetMs = date.getTimezoneOffset() * 60000;
+    return new Date(date.getTime() - offsetMs).toISOString().slice(0, 10);
+};
+
+const toLocalIsoString = (dateInput: string): string | null => {
+    if (!dateInput) return null;
+    const [year, month, day] = dateInput.split("-").map(Number);
+    if (!year || !month || !day) return null;
+    const localDate = new Date(year, month - 1, day, 0, 0, 0, 0);
+    return localDate.toISOString();
+};
+
+const getTodayInputValue = (): string => toDateInputValue(new Date().toISOString());
+
 export default function MoneyDrain() {
     const [mounted, setMounted] = useState(false);
     const [selectedAccount, setSelectedAccount] = useState<1 | 2 | 3>(1);
@@ -154,6 +170,7 @@ export default function MoneyDrain() {
         amount: "",
         type: "expense" as "income" | "expense",
         category: "other",
+        date: getTodayInputValue(),
     });
     const [showAddCategory, setShowAddCategory] = useState(false);
     const [newCategoryName, setNewCategoryName] = useState("");
@@ -306,11 +323,13 @@ export default function MoneyDrain() {
 
         if (editingId) {
             // Update existing transaction
+            const isoDate = toLocalIsoString(formData.date);
             updateTransaction(editingId, {
                 description,
                 amount: parseFloat(formData.amount),
                 type: formData.type,
                 category: formData.category,
+                date: isoDate ?? undefined,
             });
             setEditingId(null);
         } else {
@@ -329,6 +348,7 @@ export default function MoneyDrain() {
             amount: "",
             type: "expense",
             category: "other",
+            date: getTodayInputValue(),
         });
         setShowAddForm(false);
     };
@@ -339,6 +359,7 @@ export default function MoneyDrain() {
             amount: transaction.amount.toString(),
             type: transaction.type,
             category: transaction.category,
+            date: toDateInputValue(transaction.date),
         });
         setEditingId(transaction.id);
         setShowAddForm(true);
@@ -694,6 +715,15 @@ export default function MoneyDrain() {
                                                 }}
                                             />
                                         </div>
+
+                                        {/* Date (edit only) */}
+                                        {editingId && (
+                                            <Input
+                                                type="date"
+                                                value={formData.date}
+                                                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                                            />
+                                        )}
 
                                         {/* Category */}
                                         <div className="flex gap-2">

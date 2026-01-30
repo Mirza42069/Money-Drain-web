@@ -189,6 +189,7 @@ export function useTransactions(account: number = 1) {
                     amount: updates.amount,
                     type: updates.type,
                     category: updates.category,
+                    date: updates.date,
                 });
             } else {
                 setLocalTransactions((prev) => prev.map((t) => (t.id === id ? { ...t, ...updates } : t)));

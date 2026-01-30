@@ -77,6 +77,7 @@ export const update = mutation({
         amount: v.optional(v.number()),
         type: v.optional(v.union(v.literal("income"), v.literal("expense"))),
         category: v.optional(v.string()),
+        date: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
         const identity = await ctx.auth.getUserIdentity();
