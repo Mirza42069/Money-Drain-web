@@ -149,10 +149,10 @@ export function formatDate(dateString: string): string {
   if (diffDays === 1) return "Yesterday";
   if (diffDays < 7) return `${diffDays} days ago`;
 
-  return date.toLocaleDateString("en-US", {
+  return new Intl.DateTimeFormat(undefined, {
     month: "short",
     day: "numeric",
-  });
+  }).format(date);
 }
 
 export function generateId(): string {

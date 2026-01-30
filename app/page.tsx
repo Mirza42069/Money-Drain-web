@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { Suspense, useState, useMemo, useEffect } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { SignInButton, SignOutButton, useUser, useAuth, PricingTable, UserButton } from "@clerk/nextjs";
 import {
     IconPlus,
@@ -118,11 +119,11 @@ const getDateLabel = (dateString: string): string => {
     } else if (transactionDate.getTime() === yesterday.getTime()) {
         return "Yesterday";
     } else {
-        return date.toLocaleDateString("en-US", {
+        return new Intl.DateTimeFormat(undefined, {
             day: "numeric",
             month: "long",
             year: "numeric",
-        });
+        }).format(date);
     }
 };
 
@@ -142,8 +143,11 @@ const toLocalIsoString = (dateInput: string): string | null => {
 
 const getTodayInputValue = (): string => toDateInputValue(new Date().toISOString());
 
-export default function MoneyDrain() {
+function MoneyDrainPage() {
     const [mounted, setMounted] = useState(false);
+    const router = useRouter();
+    const pathname = usePathname();
+    const searchParams = useSearchParams();
     const [selectedAccount, setSelectedAccount] = useState<1 | 2 | 3>(1);
 
     const {
@@ -207,6 +211,33 @@ export default function MoneyDrain() {
         });
         return () => cancelAnimationFrame(timer);
     }, []);
+
+    useEffect(() => {
+        if (!mounted) return;
+        const accountParam = searchParams.get("account");
+        const periodParam = searchParams.get("period");
+        const parsedAccount = accountParam ? Number.parseInt(accountParam, 10) : null;
+
+        if (parsedAccount && [1, 2, 3].includes(parsedAccount)) {
+            setSelectedAccount(parsedAccount as 1 | 2 | 3);
+        }
+        if (periodParam && allPeriods.includes(periodParam as FilterPeriod)) {
+            setFilterPeriod(periodParam as FilterPeriod);
+        }
+    }, [mounted, searchParams]);
+
+    useEffect(() => {
+        if (!mounted) return;
+        const nextAccount = String(selectedAccount);
+        const currentAccount = searchParams.get("account");
+        const currentPeriod = searchParams.get("period");
+
+        if (currentAccount === nextAccount && currentPeriod === filterPeriod) return;
+        const params = new URLSearchParams(searchParams.toString());
+        params.set("account", nextAccount);
+        params.set("period", filterPeriod);
+        router.replace(`${pathname}?${params.toString()}`);
+    }, [filterPeriod, mounted, pathname, router, searchParams, selectedAccount]);
 
     // Save preferences to localStorage
     useEffect(() => {
@@ -376,7 +407,7 @@ export default function MoneyDrain() {
     if (isLoading) {
         return (
             <div className="min-h-screen flex items-center justify-center">
-                <div className="animate-pulse text-muted-foreground text-sm">Loading...</div>
+                <div className="animate-pulse text-muted-foreground text-sm">Loading…</div>
             </div>
         );
     }
@@ -419,9 +450,9 @@ export default function MoneyDrain() {
                     <div className="max-w-2xl mx-auto">
                         <div className="text-center mb-6">
                             <div className="size-16 rounded-full bg-linear-to-br from-amber-400 to-orange-500 flex items-center justify-center mx-auto mb-4">
-                                <IconLock className="size-8 text-white" />
+                                <IconLock className="size-8 text-white" aria-hidden="true" />
                             </div>
-                            <h1 className="text-2xl font-bold mb-2">Upgrade to Premium</h1>
+                            <h1 className="text-2xl font-bold mb-2 text-balance scroll-mt-24">Upgrade to Premium</h1>
                             <p className="text-muted-foreground">
                                 Unlock the <strong>1 Year</strong> and <strong>All Time</strong> filters to view your complete financial history
                             </p>
@@ -568,7 +599,7 @@ export default function MoneyDrain() {
                                             <span className="flex items-center gap-2">
                                                 Years
                                                 <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-linear-to-r from-amber-500/20 to-orange-500/20 text-amber-500 font-medium">
-                                                    <IconCrown className="size-2.5" />
+                                                    <IconCrown className="size-2.5" aria-hidden="true" />
                                                     Premium
                                                 </span>
                                                 {yearPeriods.includes(filterPeriod) && (
@@ -586,7 +617,7 @@ export default function MoneyDrain() {
                                                         className={`flex items-center justify-between ${filterPeriod === period ? 'bg-accent' : ''}`}
                                                     >
                                                         {periodLabels[period]}
-                                                        {isLocked && <IconLock className="size-3 text-amber-500" />}
+                                                        {isLocked && <IconLock className="size-3 text-amber-500" aria-hidden="true" />}
                                                     </DropdownMenuItem>
                                                 );
                                             })}
@@ -603,11 +634,11 @@ export default function MoneyDrain() {
                                         <span className="flex items-center gap-2">
                                             All Time
                                             <span className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-linear-to-r from-amber-500/20 to-orange-500/20 text-amber-500 font-medium">
-                                                <IconCrown className="size-2.5" />
+                                                <IconCrown className="size-2.5" aria-hidden="true" />
                                                 Premium
                                             </span>
                                         </span>
-                                        {!hasPremiumAccess && <IconLock className="size-3 text-amber-500" />}
+                                        {!hasPremiumAccess && <IconLock className="size-3 text-amber-500" aria-hidden="true" />}
                                     </DropdownMenuItem>
                                 </DropdownMenuContent>
                             </DropdownMenu>
@@ -658,15 +689,16 @@ export default function MoneyDrain() {
                                     size="lg"
                                     onClick={() => setShowAddForm(!showAddForm)}
                                     className="size-10 p-0"
+                                    aria-label={showAddForm ? "Close add transaction" : "Add transaction"}
                                 >
-                                    <IconPlus className={`size-5 transition-transform duration-200 ${showAddForm ? "rotate-45" : ""}`} />
+                                    <IconPlus className={`size-5 transition-transform duration-200 ${showAddForm ? "rotate-45" : ""}`} aria-hidden="true" />
                                 </Button>
                             </Tooltip>
                         </div>
 
                         {/* Add Transaction Form */}
                         {showAddForm && (
-                            <Card className="border-primary/20 animate-in slide-in-from-top-2 duration-200">
+                            <Card className="border-primary/20 animate-in slide-in-from-top-2 duration-200 motion-reduce:animate-none motion-reduce:transition-none">
                                 <CardContent className="p-3">
                                     <form onSubmit={handleSubmit} className="space-y-3">
                                         {/* Type Toggle */}
@@ -694,15 +726,22 @@ export default function MoneyDrain() {
                                         {/* Description & Amount */}
                                         <div className="grid grid-cols-2 gap-2">
                                             <Input
-                                                placeholder="Description"
+                                                placeholder="Description… e.g. Coffee"
+                                                name="description"
+                                                aria-label="Description"
+                                                autoComplete="off"
                                                 value={formData.description}
                                                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                                             />
                                             <Input
-                                                type="text"
-                                                inputMode="numeric"
-                                                placeholder="Amount"
-                                                value={formData.amount ? Number(formData.amount).toLocaleString() : ""}
+                                                type="number"
+                                                inputMode="decimal"
+                                                step="0.01"
+                                                placeholder="Amount… e.g. 12.50"
+                                                name="amount"
+                                                aria-label="Amount"
+                                                autoComplete="off"
+                                                value={formData.amount}
                                                 onChange={(e) => {
                                                     // Remove all non-digit characters except decimal point
                                                     const raw = e.target.value.replace(/[^0-9.]/g, "");
@@ -721,6 +760,9 @@ export default function MoneyDrain() {
                                             <Input
                                                 type="date"
                                                 value={formData.date}
+                                                name="date"
+                                                aria-label="Transaction date"
+                                                autoComplete="off"
                                                 onChange={(e) => setFormData({ ...formData, date: e.target.value })}
                                             />
                                         )}
@@ -737,8 +779,8 @@ export default function MoneyDrain() {
                                                     }
                                                 }}
                                             >
-                                                <SelectTrigger className="flex-1">
-                                                    <SelectValue placeholder="Category" />
+                                                <SelectTrigger className="flex-1" aria-label="Category" name="category">
+                                                    <SelectValue placeholder="Category… e.g. Food" />
                                                 </SelectTrigger>
                                                 <SelectContent>
                                                     {getCategories(formData.type).map((category: Category) => (
@@ -771,8 +813,9 @@ export default function MoneyDrain() {
                                                         setFormData({ ...formData, category: "other" });
                                                     }}
                                                     className="px-2 text-muted-foreground hover:text-destructive hover:border-destructive"
+                                                    aria-label="Delete custom category"
                                                 >
-                                                    <IconTrash className="size-4" />
+                                                    <IconTrash className="size-4" aria-hidden="true" />
                                                 </Button>
                                             )}
                                         </div>
@@ -787,14 +830,18 @@ export default function MoneyDrain() {
                                                             key={icon}
                                                             type="button"
                                                             onClick={() => setNewCategoryIcon(icon)}
-                                                            className={`size-7 flex items-center justify-center rounded-md text-sm transition-colors hover:bg-muted ${newCategoryIcon === icon ? "bg-primary/20 ring-1 ring-primary" : ""}`}
+                                                            className={`size-7 flex items-center justify-center rounded-md text-sm transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${newCategoryIcon === icon ? "bg-primary/20 ring-1 ring-primary" : ""}`}
+                                                            aria-label={`Select ${icon} icon`}
                                                         >
                                                             {icon}
                                                         </button>
                                                     ))}
                                                 </div>
                                                 <Input
-                                                    placeholder="Category name"
+                                                    placeholder="Category name… e.g. Gym"
+                                                    name="category-name"
+                                                    aria-label="Category name"
+                                                    autoComplete="off"
                                                     value={newCategoryName}
                                                     onChange={(e) => setNewCategoryName(e.target.value)}
                                                     className="w-full"
@@ -877,16 +924,18 @@ export default function MoneyDrain() {
                                                 size="sm"
                                                 onClick={() => setCategoryViewFilter("expense")}
                                                 className={`h-6 px-2 text-[10px] ${categoryViewFilter === "expense" ? "bg-rose-500 hover:bg-rose-600" : "text-rose-500 hover:text-rose-600"}`}
+                                                aria-label="Show expenses"
                                             >
-                                                <IconTrendingDown className="size-3" />
+                                                <IconTrendingDown className="size-3" aria-hidden="true" />
                                             </Button>
                                             <Button
                                                 variant={categoryViewFilter === "income" ? "default" : "ghost"}
                                                 size="sm"
                                                 onClick={() => setCategoryViewFilter("income")}
                                                 className={`h-6 px-2 text-[10px] ${categoryViewFilter === "income" ? "bg-emerald-500 hover:bg-emerald-600" : "text-emerald-500 hover:text-emerald-600"}`}
+                                                aria-label="Show income"
                                             >
-                                                <IconTrendingUp className="size-3" />
+                                                <IconTrendingUp className="size-3" aria-hidden="true" />
                                             </Button>
                                         </div>
                                     </div>
@@ -918,7 +967,7 @@ export default function MoneyDrain() {
                                                             </div>
                                                             <div className="h-1 bg-muted rounded-full overflow-hidden">
                                                                 <div
-                                                                    className="h-full rounded-full transition-all duration-300 bg-rose-500"
+                                                                    className="h-full rounded-full transition-[width] duration-300 bg-rose-500 motion-reduce:transition-none"
                                                                     style={{ width: `${percentage}%` }}
                                                                 />
                                                             </div>
@@ -956,7 +1005,7 @@ export default function MoneyDrain() {
                                                             </div>
                                                             <div className="h-1 bg-muted rounded-full overflow-hidden">
                                                                 <div
-                                                                    className="h-full rounded-full transition-all duration-300 bg-emerald-500"
+                                                                    className="h-full rounded-full transition-[width] duration-300 bg-emerald-500 motion-reduce:transition-none"
                                                                     style={{ width: `${percentage}%` }}
                                                                 />
                                                             </div>
@@ -1004,10 +1053,11 @@ export default function MoneyDrain() {
                                                     }
                                                 }}
                                                 className="h-6 px-2 text-muted-foreground hover:text-foreground"
+                                                aria-label={isDarkMode ? "Switch to light mode" : "Switch to dark mode"}
                                             >
                                                 {isDarkMode
-                                                    ? <IconSun className="size-3" />
-                                                    : <IconMoon className="size-3" />}
+                                                    ? <IconSun className="size-3" aria-hidden="true" />
+                                                    : <IconMoon className="size-3" aria-hidden="true" />}
                                             </Button>
                                         </Tooltip>
 
@@ -1036,8 +1086,9 @@ export default function MoneyDrain() {
                                                         URL.revokeObjectURL(url);
                                                     }}
                                                     className="h-6 px-2 text-muted-foreground hover:text-foreground"
+                                                    aria-label="Export CSV"
                                                 >
-                                                    <IconDownload className="size-3" />
+                                                    <IconDownload className="size-3" aria-hidden="true" />
                                                 </Button>
                                             </Tooltip>
                                         )}
@@ -1050,8 +1101,9 @@ export default function MoneyDrain() {
                                                         variant="ghost"
                                                         size="sm"
                                                         className="h-6 px-2 text-muted-foreground hover:text-destructive"
+                                                        aria-label="Clear all transactions"
                                                     >
-                                                        <IconTrash className="size-3" />
+                                                        <IconTrash className="size-3" aria-hidden="true" />
                                                     </Button>
                                                 </AlertDialogTrigger>
                                                 <AlertDialogContent size="sm">
@@ -1081,7 +1133,14 @@ export default function MoneyDrain() {
                                         <p className="text-xs text-muted-foreground">No transactions</p>
                                     </div>
                                 ) : (
-                                    <div className="space-y-0.5">
+                                    <div
+                                        className="space-y-0.5"
+                                        style={
+                                            recentTransactions.length > 50
+                                                ? { contentVisibility: "auto", containIntrinsicSize: "1px 800px" }
+                                                : undefined
+                                        }
+                                    >
                                         {displayedTransactions.map((transaction, index) => {
                                             const dateLabel = getDateLabel(transaction.date);
                                             const prevTransaction = index > 0 ? displayedTransactions[index - 1] : null;
@@ -1178,8 +1237,9 @@ function TransactionItem({
                     size="icon-xs"
                     onClick={onEdit}
                     className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-primary"
+                    aria-label="Edit transaction"
                 >
-                    <IconEdit className="size-3" />
+                    <IconEdit className="size-3" aria-hidden="true" />
                 </Button>
                 <AlertDialog>
                     <AlertDialogTrigger asChild>
@@ -1187,8 +1247,9 @@ function TransactionItem({
                             variant="ghost"
                             size="icon-xs"
                             className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                            aria-label="Delete transaction"
                         >
-                            <IconTrash className="size-3" />
+                            <IconTrash className="size-3" aria-hidden="true" />
                         </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent size="sm">
@@ -1250,5 +1311,19 @@ function AuthButton() {
                 </div>
             </CardContent>
         </Card>
+    );
+}
+
+export default function MoneyDrain() {
+    return (
+        <Suspense
+            fallback={(
+                <div className="min-h-screen flex items-center justify-center">
+                    <div className="animate-pulse text-muted-foreground text-sm">Loading…</div>
+                </div>
+            )}
+        >
+            <MoneyDrainPage />
+        </Suspense>
     );
 }
