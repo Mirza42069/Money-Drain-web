@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useMemo, useEffect } from "react";
+import { Suspense, useState, useMemo, useEffect, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { SignInButton, SignOutButton, useUser, useAuth, PricingTable, UserButton } from "@clerk/nextjs";
 import {
@@ -181,6 +181,10 @@ function MoneyDrainPage() {
     const [newCategoryIcon, setNewCategoryIcon] = useState("📌");
     const [isDarkMode, setIsDarkMode] = useState(true);
     const [showPricingView, setShowPricingView] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [formError, setFormError] = useState<string | null>(null);
+    const [isDirty, setIsDirty] = useState(false);
+    const amountInputRef = useRef<HTMLInputElement | null>(null);
 
     // Check for premium subscription access (check both plan and feature)
     const { has, isLoaded } = useAuth();
@@ -211,6 +215,16 @@ function MoneyDrainPage() {
         });
         return () => cancelAnimationFrame(timer);
     }, []);
+
+    useEffect(() => {
+        if (!isDirty) return;
+        const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+            event.preventDefault();
+            event.returnValue = "";
+        };
+        window.addEventListener("beforeunload", handleBeforeUnload);
+        return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+    }, [isDirty]);
 
     useEffect(() => {
         if (!mounted) return;
@@ -344,34 +358,44 @@ function MoneyDrainPage() {
         : recentTransactions.slice(0, VISIBLE_TRANSACTIONS);
     const hiddenCount = recentTransactions.length - VISIBLE_TRANSACTIONS;
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!formData.amount) return;
+        if (!formData.amount) {
+            setFormError("Enter an amount.");
+            amountInputRef.current?.focus();
+            return;
+        }
+        setFormError(null);
+        setIsSubmitting(true);
 
         // Auto-generate description if empty
         const description = formData.description.trim() ||
             (formData.type === "income" ? "Income" : getCategoryInfo(formData.category).name);
 
-        if (editingId) {
-            // Update existing transaction
-            const isoDate = toLocalIsoString(formData.date);
-            updateTransaction(editingId, {
-                description,
-                amount: parseFloat(formData.amount),
-                type: formData.type,
-                category: formData.category,
-                date: isoDate ?? undefined,
-            });
-            setEditingId(null);
-        } else {
-            // Add new transaction
-            addTransaction({
-                description,
-                amount: parseFloat(formData.amount),
-                type: formData.type,
-                category: formData.category,
-                date: new Date().toISOString(),
-            });
+        try {
+            if (editingId) {
+                // Update existing transaction
+                const isoDate = toLocalIsoString(formData.date);
+                await updateTransaction(editingId, {
+                    description,
+                    amount: parseFloat(formData.amount),
+                    type: formData.type,
+                    category: formData.category,
+                    date: isoDate ?? undefined,
+                });
+                setEditingId(null);
+            } else {
+                // Add new transaction
+                await addTransaction({
+                    description,
+                    amount: parseFloat(formData.amount),
+                    type: formData.type,
+                    category: formData.category,
+                    date: new Date().toISOString(),
+                });
+            }
+        } finally {
+            setIsSubmitting(false);
         }
 
         setFormData({
@@ -382,6 +406,7 @@ function MoneyDrainPage() {
             date: getTodayInputValue(),
         });
         setShowAddForm(false);
+        setIsDirty(false);
     };
 
     const startEdit = (transaction: Transaction) => {
@@ -394,6 +419,7 @@ function MoneyDrainPage() {
         });
         setEditingId(transaction.id);
         setShowAddForm(true);
+        setIsDirty(false);
     };
 
     const getCategoryInfo = (categoryId: string) => {
@@ -407,7 +433,7 @@ function MoneyDrainPage() {
     if (isLoading) {
         return (
             <div className="min-h-screen flex items-center justify-center">
-                <div className="animate-pulse text-muted-foreground text-sm">Loading…</div>
+                <div className="animate-pulse motion-reduce:animate-none text-muted-foreground text-sm">Loading…</div>
             </div>
         );
     }
@@ -482,15 +508,15 @@ function MoneyDrainPage() {
                             {/* Currency Dropdown */}
                             <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="gap-1.5 font-semibold min-w-[70px]"
-                                    >
-                                        <IconCoin className="size-3.5" />
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="gap-1.5 font-semibold min-w-[70px]"
+                                        >
+                                        <IconCoin className="size-3.5" aria-hidden="true" />
                                         {currencyLabels[currency]}
-                                        <IconChevronDown className="size-3 ml-0.5" />
-                                    </Button>
+                                        <IconChevronDown className="size-3 ml-0.5" aria-hidden="true" />
+                                        </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="start">
                                     {currencyOrder.map((curr) => (
@@ -539,9 +565,9 @@ function MoneyDrainPage() {
                                         size="sm"
                                         className="gap-1.5 font-semibold min-w-[70px]"
                                     >
-                                        <IconClock className="size-3.5" />
+                                        <IconClock className="size-3.5" aria-hidden="true" />
                                         {periodShortLabels[filterPeriod]}
-                                        <IconChevronDown className="size-3 ml-0.5" />
+                                        <IconChevronDown className="size-3 ml-0.5" aria-hidden="true" />
                                     </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end" className="w-48">
@@ -650,7 +676,7 @@ function MoneyDrainPage() {
                                 {/* Expense */}
                                 <div className="p-3 flex flex-col items-center gap-1 cursor-default hover:bg-muted/30 transition-colors">
                                     <div className="size-8 rounded-md bg-rose-500/10 flex items-center justify-center">
-                                        <IconTrendingDown className="size-4 text-rose-500" />
+                                        <IconTrendingDown className="size-4 text-rose-500" aria-hidden="true" />
                                     </div>
                                     <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Expense</p>
                                     <p className="text-sm font-bold tabular-nums text-rose-500">
@@ -661,7 +687,7 @@ function MoneyDrainPage() {
                                 {/* Income */}
                                 <div className="p-3 flex flex-col items-center gap-1 cursor-default hover:bg-muted/30 transition-colors">
                                     <div className="size-8 rounded-md bg-emerald-500/10 flex items-center justify-center">
-                                        <IconTrendingUp className="size-4 text-emerald-500" />
+                                        <IconTrendingUp className="size-4 text-emerald-500" aria-hidden="true" />
                                     </div>
                                     <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Income</p>
                                     <p className="text-sm font-bold tabular-nums text-emerald-500">
@@ -672,7 +698,7 @@ function MoneyDrainPage() {
                                 {/* Bank (Balance) */}
                                 <div className="p-3 flex flex-col items-center gap-1 cursor-default hover:bg-muted/30 transition-colors">
                                     <div className="size-8 rounded-md bg-primary/10 flex items-center justify-center">
-                                        <IconBuildingBank className="size-4 text-primary" />
+                                        <IconBuildingBank className="size-4 text-primary" aria-hidden="true" />
                                     </div>
                                     <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Bank</p>
                                     <p className={`text-sm font-bold tabular-nums ${balance >= 0 ? "text-primary" : "text-destructive"}`}>
@@ -687,11 +713,15 @@ function MoneyDrainPage() {
                             <Tooltip content={showAddForm ? "Close" : "Add"}>
                                 <Button
                                     size="lg"
-                                    onClick={() => setShowAddForm(!showAddForm)}
+                                    onClick={() => {
+                                        setShowAddForm(!showAddForm);
+                                        setIsDirty(false);
+                                        setFormError(null);
+                                    }}
                                     className="size-10 p-0"
                                     aria-label={showAddForm ? "Close add transaction" : "Add transaction"}
                                 >
-                                    <IconPlus className={`size-5 transition-transform duration-200 ${showAddForm ? "rotate-45" : ""}`} aria-hidden="true" />
+                                    <IconPlus className={`size-5 transition-transform duration-200 motion-reduce:transition-none motion-reduce:transform-none ${showAddForm ? "rotate-45" : ""}`} aria-hidden="true" />
                                 </Button>
                             </Tooltip>
                         </div>
@@ -707,18 +737,24 @@ function MoneyDrainPage() {
                                                 type="button"
                                                 variant={formData.type === "expense" ? "default" : "outline"}
                                                 size="sm"
-                                                onClick={() => setFormData({ ...formData, type: "expense" })}
+                                                onClick={() => {
+                                                    setFormData({ ...formData, type: "expense" });
+                                                    setIsDirty(true);
+                                                }}
                                             >
-                                                <IconArrowDown data-icon="inline-start" className="size-3.5" />
+                                                <IconArrowDown data-icon="inline-start" className="size-3.5" aria-hidden="true" />
                                                 Expense
                                             </Button>
                                             <Button
                                                 type="button"
                                                 variant={formData.type === "income" ? "default" : "outline"}
                                                 size="sm"
-                                                onClick={() => setFormData({ ...formData, type: "income" })}
+                                                onClick={() => {
+                                                    setFormData({ ...formData, type: "income" });
+                                                    setIsDirty(true);
+                                                }}
                                             >
-                                                <IconArrowUp data-icon="inline-start" className="size-3.5" />
+                                                <IconArrowUp data-icon="inline-start" className="size-3.5" aria-hidden="true" />
                                                 Income
                                             </Button>
                                         </div>
@@ -731,7 +767,10 @@ function MoneyDrainPage() {
                                                 aria-label="Description"
                                                 autoComplete="off"
                                                 value={formData.description}
-                                                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                                                onChange={(e) => {
+                                                    setFormData({ ...formData, description: e.target.value });
+                                                    setIsDirty(true);
+                                                }}
                                             />
                                             <Input
                                                 type="number"
@@ -741,6 +780,7 @@ function MoneyDrainPage() {
                                                 name="amount"
                                                 aria-label="Amount"
                                                 autoComplete="off"
+                                                ref={amountInputRef}
                                                 value={formData.amount}
                                                 onChange={(e) => {
                                                     // Remove all non-digit characters except decimal point
@@ -751,9 +791,16 @@ function MoneyDrainPage() {
                                                         ? parts[0] + "." + parts.slice(1).join("")
                                                         : raw;
                                                     setFormData({ ...formData, amount: cleaned });
+                                                    if (cleaned) setFormError(null);
+                                                    setIsDirty(true);
                                                 }}
                                             />
                                         </div>
+                                        {formError && (
+                                            <p className="text-xs text-destructive" role="status" aria-live="polite">
+                                                {formError}
+                                            </p>
+                                        )}
 
                                         {/* Date (edit only) */}
                                         {editingId && (
@@ -763,7 +810,10 @@ function MoneyDrainPage() {
                                                 name="date"
                                                 aria-label="Transaction date"
                                                 autoComplete="off"
-                                                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                                                onChange={(e) => {
+                                                    setFormData({ ...formData, date: e.target.value });
+                                                    setIsDirty(true);
+                                                }}
                                             />
                                         )}
 
@@ -776,6 +826,7 @@ function MoneyDrainPage() {
                                                         setShowAddCategory(true);
                                                     } else {
                                                         setFormData({ ...formData, category: value });
+                                                        setIsDirty(true);
                                                     }
                                                 }}
                                             >
@@ -811,6 +862,7 @@ function MoneyDrainPage() {
                                                     onClick={() => {
                                                         deleteCustomCategory(formData.type, formData.category);
                                                         setFormData({ ...formData, category: "other" });
+                                                        setIsDirty(true);
                                                     }}
                                                     className="px-2 text-muted-foreground hover:text-destructive hover:border-destructive"
                                                     aria-label="Delete custom category"
@@ -843,7 +895,10 @@ function MoneyDrainPage() {
                                                     aria-label="Category name"
                                                     autoComplete="off"
                                                     value={newCategoryName}
-                                                    onChange={(e) => setNewCategoryName(e.target.value)}
+                                                    onChange={(e) => {
+                                                        setNewCategoryName(e.target.value);
+                                                        setIsDirty(true);
+                                                    }}
                                                     className="w-full"
                                                 />
                                                 <div className="flex gap-2">
@@ -856,6 +911,7 @@ function MoneyDrainPage() {
                                                             setShowAddCategory(false);
                                                             setNewCategoryName("");
                                                             setNewCategoryIcon("📌");
+                                                            setIsDirty(false);
                                                         }}
                                                     >
                                                         Cancel
@@ -875,6 +931,7 @@ function MoneyDrainPage() {
                                                                 setShowAddCategory(false);
                                                                 setNewCategoryName("");
                                                                 setNewCategoryIcon("📌");
+                                                                setIsDirty(true);
                                                             }
                                                         }}
                                                     >
@@ -887,11 +944,11 @@ function MoneyDrainPage() {
                                         {/* Actions - Only show when not adding custom category */}
                                         {!showAddCategory && (
                                             <div className="grid grid-cols-2 gap-2">
-                                                <Button type="button" variant="outline" size="sm" onClick={() => { setShowAddForm(false); setEditingId(null); }}>
+                                                <Button type="button" variant="outline" size="sm" onClick={() => { setShowAddForm(false); setEditingId(null); setIsDirty(false); setFormError(null); }}>
                                                     Cancel
                                                 </Button>
-                                                <Button type="submit" size="sm">
-                                                    {editingId ? "Save" : "Add"}
+                                                <Button type="submit" size="sm" disabled={isSubmitting}>
+                                                    {isSubmitting ? "Saving…" : (editingId ? "Save" : "Add")}
                                                 </Button>
                                             </div>
                                         )}
@@ -945,7 +1002,7 @@ function MoneyDrainPage() {
                                         <div className="space-y-2">
                                             {categoryViewFilter === "all" && (
                                                 <div className="flex items-center gap-2 text-[10px] font-medium text-rose-500 uppercase tracking-wide">
-                                                    <IconTrendingDown className="size-3" />
+                                                    <IconTrendingDown className="size-3" aria-hidden="true" />
                                                     <span>Expenses</span>
                                                 </div>
                                             )}
@@ -967,8 +1024,8 @@ function MoneyDrainPage() {
                                                             </div>
                                                             <div className="h-1 bg-muted rounded-full overflow-hidden">
                                                                 <div
-                                                                    className="h-full rounded-full transition-[width] duration-300 bg-rose-500 motion-reduce:transition-none"
-                                                                    style={{ width: `${percentage}%` }}
+                                                                    className="h-full origin-left rounded-full bg-rose-500 transition-transform duration-300 motion-reduce:transition-none"
+                                                                    style={{ transform: `scaleX(${percentage / 100})` }}
                                                                 />
                                                             </div>
                                                         </div>
@@ -983,7 +1040,7 @@ function MoneyDrainPage() {
                                         <div className="space-y-2">
                                             {categoryViewFilter === "all" && (
                                                 <div className="flex items-center gap-2 text-[10px] font-medium text-emerald-500 uppercase tracking-wide">
-                                                    <IconTrendingUp className="size-3" />
+                                                    <IconTrendingUp className="size-3" aria-hidden="true" />
                                                     <span>Income</span>
                                                 </div>
                                             )}
@@ -1005,8 +1062,8 @@ function MoneyDrainPage() {
                                                             </div>
                                                             <div className="h-1 bg-muted rounded-full overflow-hidden">
                                                                 <div
-                                                                    className="h-full rounded-full transition-[width] duration-300 bg-emerald-500 motion-reduce:transition-none"
-                                                                    style={{ width: `${percentage}%` }}
+                                                                    className="h-full origin-left rounded-full bg-emerald-500 transition-transform duration-300 motion-reduce:transition-none"
+                                                                    style={{ transform: `scaleX(${percentage / 100})` }}
                                                                 />
                                                             </div>
                                                         </div>
@@ -1070,7 +1127,7 @@ function MoneyDrainPage() {
                                                     onClick={() => {
                                                         const headers = ["Date", "Description", "Category", "Type", "Amount"];
                                                         const rows = transactions.map((t: Transaction) => [
-                                                            new Date(t.date).toLocaleDateString(),
+                                                            new Intl.DateTimeFormat(undefined).format(new Date(t.date)),
                                                             t.description,
                                                             t.category,
                                                             t.type,
@@ -1127,9 +1184,9 @@ function MoneyDrainPage() {
                                 </div>
                                 {recentTransactions.length === 0 ? (
                                     <div className="text-center py-6">
-                                        <div className="size-10 rounded-full bg-muted mx-auto mb-2 flex items-center justify-center">
-                                            <IconWallet className="size-4 text-muted-foreground" />
-                                        </div>
+                                            <div className="size-10 rounded-full bg-muted mx-auto mb-2 flex items-center justify-center">
+                                            <IconWallet className="size-4 text-muted-foreground" aria-hidden="true" />
+                                            </div>
                                         <p className="text-xs text-muted-foreground">No transactions</p>
                                     </div>
                                 ) : (
@@ -1319,7 +1376,7 @@ export default function MoneyDrain() {
         <Suspense
             fallback={(
                 <div className="min-h-screen flex items-center justify-center">
-                    <div className="animate-pulse text-muted-foreground text-sm">Loading…</div>
+                    <div className="animate-pulse motion-reduce:animate-none text-muted-foreground text-sm">Loading…</div>
                 </div>
             )}
         >

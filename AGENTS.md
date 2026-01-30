@@ -1,155 +1,135 @@
-# Money-Drain-web Agent Guidelines
+# Money-Drain-web Agent Guide
 
-This document provides essential information for AI agents working on the Money-Drain-web codebase.
+Guidelines for agentic coding in this repo. Keep changes aligned with existing patterns.
 
-## 1. Project Overview
+## 1) Project Overview
+- Framework: Next.js 16.1 (App Router)
+- Language: TypeScript 5+
+- Styling: Tailwind CSS 4, Shadcn UI, Radix UI
+- Backend: Convex
+- Auth: Clerk
+- Package manager: Bun (preferred)
 
-- **Framework**: Next.js 16.1 (App Router)
-- **Language**: TypeScript 5+
-- **Styling**: Tailwind CSS 4, Shadcn UI, Radix UI
-- **Backend**: Convex
-- **Auth**: Clerk
-- **Package Manager**: Bun (preferred) or npm
+## 2) Build / Lint / Test Commands
 
-## 2. Build, Lint, and Test Commands
+### Install
+```bash
+bun install
+```
 
-### Development
-Start the development server:
+### Dev server
 ```bash
 bun run dev
-# or
-npm run dev
 ```
 
-### Build
-Build the application for production:
+### Production build (also runs TS checks)
 ```bash
 bun run build
-# or
-npm run build
 ```
 
-### Linting
-Run the linter (ESLint 9):
+### Lint
 ```bash
 bun run lint
-# or
-npm run lint
 ```
 
-### Testing
-*Note: No test runner (Jest/Vitest) is currently configured in `package.json`.*
-
-If you need to add tests, prefer **Vitest** for compatibility with modern tooling.
-To run tests (if configured):
+### Convex
 ```bash
-bun run test
+# Local dev server + sync
+bunx convex dev
+
+# Regenerate Convex types after schema/function changes
+bunx convex codegen
+
+# Deploy Convex backend
+bunx convex deploy
 ```
 
-## 3. Code Style & Conventions
+### Tests
+No test runner configured in `package.json`.
+- Single test: N/A
+- If Vitest is added later: `bun run test -- <pattern>`
 
-### 3.1 Imports
-- Use **absolute imports** with the `@` alias.
-- Group imports in the following order:
-  1.  React / Next.js built-ins
-  2.  Third-party libraries (Convex, Clerk, etc.)
-  3.  Internal components (`@/components/...`)
-  4.  Internal utilities/hooks (`@/lib/...`, `@/hooks/...`)
-  5.  Types/Interfaces
+## 3) Cursor / Copilot Rules
+- No `.cursor/rules`, `.cursorrules`, or `.github/copilot-instructions.md` found.
 
-**Example:**
-```typescript
-import { useState } from "react";
-import { useQuery } from "convex/react";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-import { api } from "../convex/_generated/api";
-```
+## 4) Code Style & Conventions
 
-### 3.2 Components
-- Use **functional components**.
-- Prefer `export default function ComponentName` for pages and major components.
-- Use `export function ComponentName` for smaller, co-located components.
-- Use strict TypeScript types for props.
+### Imports
+- Prefer absolute imports with `@` alias.
+- Order groups:
+  1) React / Next.js
+  2) Third-party libraries
+  3) Internal components (`@/components/...`)
+  4) Internal hooks/utils (`@/hooks/...`, `@/lib/...`)
+  5) Types
 
-**Example:**
-```tsx
-interface TransactionItemProps {
-  amount: number;
-  label: string;
-}
+### Components & Hooks
+- Functional components only.
+- Pages: `export default function PageName()`.
+- Local components: `export function Name()`.
+- Hooks always start with `use*` and are never conditional.
+- Keep render bodies cheap; use `useMemo` for derived lists.
 
-export function TransactionItem({ amount, label }: TransactionItemProps) {
-  return (
-    <div className="flex justify-between p-4 border rounded">
-      <span>{label}</span>
-      <span className="font-bold">${amount}</span>
-    </div>
-  );
-}
-```
+### Types
+- Avoid `any`; use explicit types or generics.
+- Props defined via `interface` or `type` near component.
+- Keep Convex and Clerk types explicit (`Id<"table">`, etc.).
 
-### 3.3 Styling (Tailwind CSS)
-- Use **Tailwind CSS** for all styling.
-- Use the `cn()` utility (from `@/lib/utils`) to merge classes, especially for conditional styling or props.
-- Follow **mobile-first** responsive design (e.g., `w-full md:w-1/2`).
-- Use CSS variables defined in `app/globals.css` (e.g., `bg-background`, `text-foreground`) for theming support.
+### Naming
+- Files: kebab-case for folders, lower/`kebab-case` for filenames.
+- Components: PascalCase.
+- Variables: camelCase; constants in UPPER_SNAKE_CASE if truly constant.
 
-**Example:**
-```tsx
-<div className={cn(
-  "p-4 rounded-lg bg-card text-card-foreground",
-  isActive && "border-primary border-2"
-)}>
-  Content
-</div>
-```
+### Formatting
+- Follow existing formatting (no formatter configured).
+- Keep lines readable; avoid deeply nested ternaries.
+- Prefer early returns and small helpers.
 
-### 3.4 Convex (Backend)
-- Define schemas in `convex/schema.ts`.
-- Create queries/mutations in separate files within `convex/` (e.g., `convex/transactions.ts`).
-- Use `query` and `mutation` helpers from `convex/server`.
-- In React components, use `useQuery` and `useMutation` hooks from `convex/react`.
+### Styling (Tailwind)
+- Use Tailwind utility classes; avoid new CSS unless needed.
+- Use CSS variables from `app/globals.css` (e.g., `bg-background`).
+- Use `cn()` for conditional class merging.
+- Use `focus-visible` utilities for focus states.
 
-**Example (Convex Function):**
-```typescript
-import { query } from "./_generated/server";
-import { v } from "convex/values";
+### Accessibility
+- Icon-only buttons must have `aria-label`.
+- Inputs/selects must have label or `aria-label` and `name`.
+- Decorative icons should be `aria-hidden="true"`.
+- Use semantic elements (`button`, `a`, `label`, `main`).
 
-export const list = query({
-  args: { userId: v.string() },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("transactions")
-      .filter((q) => q.eq(q.field("userId"), args.userId))
-      .collect();
-  },
-});
-```
+### Dates & Numbers
+- Use `Intl.DateTimeFormat` and `Intl.NumberFormat` (no hardcoded locales).
+- Avoid formatting in render loops if expensive; memoize if needed.
 
-### 3.5 Authentication (Clerk)
-- Use Clerk components (`<SignIn />`, `<UserButton />`) for auth UI.
-- Use `useAuth()` or `useUser()` hooks to access user state in client components.
-- Secure Convex functions using `ctx.auth.getUserIdentity()`.
+### Error Handling
+- For async mutations: try/catch and surface user-friendly errors.
+- Log detailed errors in dev only.
+- Convex: always validate auth with `ctx.auth.getUserIdentity()`.
 
-### 3.6 Error Handling
-- Use `try/catch` blocks for async operations, especially mutations.
-- Display user-friendly error messages using toast notifications (Shadcn `toast` or `sonner`).
-- Log technical errors to the console in development.
+### State & URL Sync
+- If UI state is user-facing (filters, tabs), prefer sync with query params.
+- Avoid hydration mismatches; wrap `useSearchParams` in `Suspense`.
 
-## 4. File Structure
+### Convex
+- Schema in `convex/schema.ts`.
+- Functions in `convex/*.ts` using `query` / `mutation`.
+- Run `bunx convex codegen` after schema/function changes.
 
-- `app/` - Next.js App Router pages and layouts.
-- `components/ui/` - Reusable UI components (buttons, inputs, etc.).
-- `components/` - Feature-specific components.
-- `convex/` - Backend API functions and database schema.
-- `lib/` - Utility functions (e.g., `utils.ts`).
-- `hooks/` - Custom React hooks.
+### Clerk
+- Use Clerk hooks/components (`useAuth`, `useUser`, `<UserButton />`).
+- Keep signed-out flows safe (guard Convex calls).
 
-## 5. Rules for Agents
+## 5) File Structure
+- `app/` Next.js pages/layouts
+- `components/ui/` reusable UI primitives
+- `components/` feature components
+- `convex/` backend functions + schema
+- `hooks/` custom React hooks
+- `lib/` utilities and helpers
+- `public/` static assets
 
-1.  **Read First**: Always read relevant files (`package.json`, `convex/schema.ts`, existing components) before editing.
-2.  **No Any**: Avoid `any` type; strictly type all props and return values.
-3.  **Clean Code**: Remove unused imports and variables.
-4.  **Conventions**: Match the existing coding style (spacing, naming, patterns).
-5.  **Safety**: Verify that changes do not break existing build or lint checks. Since there are no tests, be extra careful with logic changes.
+## 6) Agent Safety Rules
+- Read relevant files before editing.
+- Do not revert unrelated user changes.
+- Keep `bun.lock` updated when dependencies change.
+- Avoid destructive git commands; do not commit unless asked.
