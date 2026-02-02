@@ -21,6 +21,7 @@ export interface Transaction {
     type: "income" | "expense";
     category: string;
     date: string;
+    tags: string[];
 }
 
 const CUSTOM_CATEGORIES_KEY = "money-drain-custom-categories";
@@ -83,16 +84,17 @@ export function useTransactions(account: number = 1) {
     // === DERIVED DATA ===
     const transactions: Transaction[] = useMemo(() => {
         if (isSignedIn) {
-            return (transactionsData || []).map((t: { id: string; description: string; amount: number; type: "income" | "expense"; category: string; date: string }) => ({
+            return (transactionsData || []).map((t: { id: string; description: string; amount: number; type: "income" | "expense"; category: string; date: string; tags: string[] }) => ({
                 id: t.id,
                 description: t.description,
                 amount: t.amount,
                 type: t.type,
                 category: t.category,
                 date: t.date,
+                tags: t.tags || [],
             }));
         }
-        return localTransactions;
+        return localTransactions.map(t => ({ ...t, tags: t.tags || [] }));
     }, [isSignedIn, transactionsData, localTransactions]);
 
     const customCategories = useMemo(() => {
@@ -159,9 +161,10 @@ export function useTransactions(account: number = 1) {
                     type: transaction.type,
                     category: transaction.category,
                     date: transaction.date,
+                    tags: transaction.tags || [],
                 });
             } else {
-                const newTransaction: Transaction = { ...transaction, id: generateId() };
+                const newTransaction: Transaction = { ...transaction, id: generateId(), tags: transaction.tags || [] };
                 setLocalTransactions((prev) => [newTransaction, ...prev]);
                 return newTransaction;
             }
@@ -190,6 +193,7 @@ export function useTransactions(account: number = 1) {
                     type: updates.type,
                     category: updates.category,
                     date: updates.date,
+                    tags: updates.tags,
                 });
             } else {
                 setLocalTransactions((prev) => prev.map((t) => (t.id === id ? { ...t, ...updates } : t)));

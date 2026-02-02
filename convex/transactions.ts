@@ -23,6 +23,7 @@ export const list = query({
             type: t.type,
             category: t.category,
             date: t.date,
+            tags: t.tags || [],
         }));
     },
 });
@@ -35,6 +36,7 @@ export const create = mutation({
         type: v.union(v.literal("income"), v.literal("expense")),
         category: v.string(),
         date: v.string(),
+        tags: v.optional(v.array(v.string())),
     },
     handler: async (ctx, args) => {
         const identity = await ctx.auth.getUserIdentity();
@@ -64,6 +66,7 @@ export const create = mutation({
             type: args.type,
             category: args.category,
             date: args.date,
+            tags: args.tags || [],
         });
 
         return id;
@@ -78,6 +81,7 @@ export const update = mutation({
         type: v.optional(v.union(v.literal("income"), v.literal("expense"))),
         category: v.optional(v.string()),
         date: v.optional(v.string()),
+        tags: v.optional(v.array(v.string())),
     },
     handler: async (ctx, args) => {
         const identity = await ctx.auth.getUserIdentity();

@@ -10,6 +10,7 @@ export default defineSchema({
         type: v.union(v.literal("income"), v.literal("expense")),
         category: v.string(),
         date: v.string(),
+        tags: v.optional(v.array(v.string())),
     })
         .index("by_user", ["userId"])
         .index("by_user_account", ["userId", "account"]),

@@ -21,6 +21,15 @@ import {
     IconLock,
     IconCrown,
     IconChevronDown,
+    IconSearch,
+    IconTag,
+    IconBolt,
+    IconX,
+    IconSparkles,
+    IconCalendar,
+    IconTarget,
+    IconMoodHappy,
+    IconMoodSad,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -105,6 +114,13 @@ const iconOptions = [
     "🛒", "💊", "🎓", "👔", "👗", "👶", "🐕", "🌱", "⚡", "💡",
 ];
 
+// Formatter for date labels
+const dateLabelFormatter = new Intl.DateTimeFormat(undefined, {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+});
+
 // Helper to get date label for grouping transactions
 const getDateLabel = (dateString: string): string => {
     const date = new Date(dateString);
@@ -119,11 +135,7 @@ const getDateLabel = (dateString: string): string => {
     } else if (transactionDate.getTime() === yesterday.getTime()) {
         return "Yesterday";
     } else {
-        return new Intl.DateTimeFormat(undefined, {
-            day: "numeric",
-            month: "long",
-            year: "numeric",
-        }).format(date);
+        return dateLabelFormatter.format(date);
     }
 };
 
@@ -175,6 +187,7 @@ function MoneyDrainPage() {
         type: "expense" as "income" | "expense",
         category: "other",
         date: getTodayInputValue(),
+        tags: "" as string,
     });
     const [showAddCategory, setShowAddCategory] = useState(false);
     const [newCategoryName, setNewCategoryName] = useState("");
@@ -185,6 +198,10 @@ function MoneyDrainPage() {
     const [formError, setFormError] = useState<string | null>(null);
     const [isDirty, setIsDirty] = useState(false);
     const amountInputRef = useRef<HTMLInputElement | null>(null);
+    const [searchQuery, setSearchQuery] = useState("");
+    const [showQuickAdd, setShowQuickAdd] = useState(false);
+    const [quickAddPresets, setQuickAddPresets] = useState<Array<{ id: string; description: string; amount: number; category: string; type: "income" | "expense" }>>([]);
+    const [showWrapped, setShowWrapped] = useState(false);
 
     // Check for premium subscription access (check both plan and feature)
     const { has, isLoaded } = useAuth();
@@ -212,6 +229,11 @@ function MoneyDrainPage() {
             if (savedPeriod && allPeriods.includes(savedPeriod)) {
                 setFilterPeriod(savedPeriod);
             }
+            // Load quick add presets
+            const savedPresets = localStorage.getItem("money-drain-quick-presets");
+            if (savedPresets) {
+                try { setQuickAddPresets(JSON.parse(savedPresets)); } catch { /* ignore */ }
+            }
         });
         return () => cancelAnimationFrame(timer);
     }, []);
@@ -225,6 +247,25 @@ function MoneyDrainPage() {
         window.addEventListener("beforeunload", handleBeforeUnload);
         return () => window.removeEventListener("beforeunload", handleBeforeUnload);
     }, [isDirty]);
+
+    // Save quick add presets
+    useEffect(() => {
+        if (mounted && quickAddPresets.length > 0) {
+            localStorage.setItem("money-drain-quick-presets", JSON.stringify(quickAddPresets));
+        }
+    }, [quickAddPresets, mounted]);
+
+    // Keyboard handler for wrapped view
+    useEffect(() => {
+        if (!showWrapped) return;
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === "Escape") {
+                setShowWrapped(false);
+            }
+        };
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+    }, [showWrapped]);
 
     useEffect(() => {
         if (!mounted) return;
@@ -295,10 +336,19 @@ function MoneyDrainPage() {
         setFilterPeriod("1d");
     };
 
-    // Filter transactions by period
+    // Filter transactions by period and search query
     const filteredTransactions = useMemo(() => {
-        return filterTransactionsByPeriod(transactions, filterPeriod);
-    }, [transactions, filterPeriod]);
+        let filtered = filterTransactionsByPeriod(transactions, filterPeriod);
+        if (searchQuery.trim()) {
+            const query = searchQuery.toLowerCase();
+            filtered = filtered.filter(t =>
+                t.description.toLowerCase().includes(query) ||
+                t.category.toLowerCase().includes(query) ||
+                (t.tags || []).some(tag => tag.toLowerCase().includes(query))
+            );
+        }
+        return filtered;
+    }, [transactions, filterPeriod, searchQuery]);
 
     // Calculate totals based on filtered transactions
     const balance = useMemo(() => {
@@ -376,22 +426,26 @@ function MoneyDrainPage() {
             if (editingId) {
                 // Update existing transaction
                 const isoDate = toLocalIsoString(formData.date);
+                const tagsArray = formData.tags.split(",").map(t => t.trim()).filter(Boolean);
                 await updateTransaction(editingId, {
                     description,
                     amount: parseFloat(formData.amount),
                     type: formData.type,
                     category: formData.category,
                     date: isoDate ?? undefined,
+                    tags: tagsArray,
                 });
                 setEditingId(null);
             } else {
                 // Add new transaction
+                const tagsArray = formData.tags.split(",").map(t => t.trim()).filter(Boolean);
                 await addTransaction({
                     description,
                     amount: parseFloat(formData.amount),
                     type: formData.type,
                     category: formData.category,
                     date: new Date().toISOString(),
+                    tags: tagsArray,
                 });
             }
         } finally {
@@ -404,6 +458,7 @@ function MoneyDrainPage() {
             type: "expense",
             category: "other",
             date: getTodayInputValue(),
+            tags: "",
         });
         setShowAddForm(false);
         setIsDirty(false);
@@ -416,6 +471,7 @@ function MoneyDrainPage() {
             type: transaction.type,
             category: transaction.category,
             date: toDateInputValue(transaction.date),
+            tags: (transaction.tags || []).join(", "),
         });
         setEditingId(transaction.id);
         setShowAddForm(true);
@@ -429,6 +485,112 @@ function MoneyDrainPage() {
             { id: "other", name: "Other", icon: "📦", color: "oklch(0.55 0 0)" }
         );
     };
+
+    // Quick add a preset
+    const handleQuickAdd = async (preset: typeof quickAddPresets[0]) => {
+        await addTransaction({
+            description: preset.description,
+            amount: preset.amount,
+            type: preset.type,
+            category: preset.category,
+            date: new Date().toISOString(),
+            tags: [],
+        });
+    };
+
+    // Save current form as quick add preset
+    const saveAsPreset = () => {
+        if (!formData.description || !formData.amount) return;
+        const newPreset = {
+            id: Math.random().toString(36).substring(2, 9),
+            description: formData.description,
+            amount: parseFloat(formData.amount),
+            category: formData.category,
+            type: formData.type,
+        };
+        setQuickAddPresets(prev => [...prev, newPreset]);
+    };
+
+    // Delete a quick add preset
+    const deletePreset = (id: string) => {
+        setQuickAddPresets(prev => prev.filter(p => p.id !== id));
+        if (quickAddPresets.length <= 1) {
+            localStorage.removeItem("money-drain-quick-presets");
+        }
+    };
+
+    // Wrapped stats
+    const wrappedStats = useMemo(() => {
+        if (filteredTransactions.length === 0) return null;
+
+        const expenseTransactions = filteredTransactions.filter(t => t.type === "expense");
+        const incomeTransactions = filteredTransactions.filter(t => t.type === "income");
+
+        // Biggest expense
+        const biggestExpense = expenseTransactions.length > 0
+            ? expenseTransactions.reduce((max, t) => t.amount > max.amount ? t : max, expenseTransactions[0])
+            : null;
+
+        // Most frequent category
+        const categoryCount: Record<string, number> = {};
+        expenseTransactions.forEach(t => {
+            categoryCount[t.category] = (categoryCount[t.category] || 0) + 1;
+        });
+        const mostFrequentCategory = Object.entries(categoryCount).length > 0
+            ? Object.entries(categoryCount).reduce((max, [cat, count]) => count > max[1] ? [cat, count] : max, ["", 0])
+            : null;
+
+        // Day of week analysis
+        const dayTotals: Record<number, number> = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
+        const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+        expenseTransactions.forEach(t => {
+            const day = new Date(t.date).getDay();
+            dayTotals[day] += t.amount;
+        });
+        const biggestSpendingDay = Object.entries(dayTotals).reduce((max, [day, amount]) =>
+            amount > max[1] ? [parseInt(day), amount] : max, [0, 0]
+        );
+
+        // Transaction count
+        const totalTransactions = filteredTransactions.length;
+
+        // Average transaction
+        const avgExpense = expenseTransactions.length > 0
+            ? expenses / expenseTransactions.length
+            : 0;
+
+        // Savings rate
+        const savingsRate = income > 0 ? ((income - expenses) / income) * 100 : 0;
+
+        // Top 3 categories
+        const top3Categories = expensesByCategory.slice(0, 3);
+
+        return {
+            biggestExpense,
+            mostFrequentCategory: mostFrequentCategory ? {
+                category: mostFrequentCategory[0] as string,
+                count: mostFrequentCategory[1] as number
+            } : null,
+            biggestSpendingDay: {
+                day: dayNames[biggestSpendingDay[0] as number],
+                amount: biggestSpendingDay[1] as number
+            },
+            totalTransactions,
+            avgExpense,
+            savingsRate,
+            top3Categories,
+            totalExpenses: expenses,
+            totalIncome: income,
+            balance,
+        };
+    }, [filteredTransactions, expenses, income, balance, expensesByCategory]);
+
+    // Get all unique tags from transactions
+    const allTags = useMemo(() => {
+        const tags = new Set<string>();
+        transactions.forEach(t => (t.tags || []).forEach(tag => tags.add(tag)));
+        return Array.from(tags).sort();
+    }, [transactions]);
 
     if (isLoading) {
         return (
@@ -469,6 +631,168 @@ function MoneyDrainPage() {
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+
+            {/* Monthly Wrapped View - Compact Dashboard */}
+            {showWrapped && wrappedStats && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-sm p-4 animate-in fade-in duration-200 motion-reduce:animate-none">
+                    <Card className="w-full max-w-4xl max-h-[90vh] overflow-y-auto overscroll-contain shadow-2xl border-primary/20">
+                        <CardContent className="p-6 space-y-6">
+                            {/* Header */}
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h2 className="text-2xl font-bold bg-gradient-to-r from-primary to-emerald-500 bg-clip-text text-transparent">
+                                        Your {periodLabels[filterPeriod]} Wrapped
+                                    </h2>
+                                    <p className="text-sm text-muted-foreground">
+                                        {wrappedStats.totalTransactions} transactions found
+                                    </p>
+                                </div>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => setShowWrapped(false)}
+                                    aria-label="Close"
+                                >
+                                    <IconX className="size-5" />
+                                </Button>
+                            </div>
+
+                            {/* Summary Grid */}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                                    <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Income</p>
+                                    <p className="text-lg font-bold text-emerald-500 truncate" title={formatCurrency(wrappedStats.totalIncome, currency)}>
+                                        {formatCurrency(wrappedStats.totalIncome, currency)}
+                                    </p>
+                                </div>
+                                <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20">
+                                    <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Expenses</p>
+                                    <p className="text-lg font-bold text-rose-500 truncate" title={formatCurrency(wrappedStats.totalExpenses, currency)}>
+                                        {formatCurrency(wrappedStats.totalExpenses, currency)}
+                                    </p>
+                                </div>
+                                <div className="p-4 rounded-xl bg-primary/10 border border-primary/20">
+                                    <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Balance</p>
+                                    <p className={`text-lg font-bold truncate ${wrappedStats.balance >= 0 ? "text-primary" : "text-destructive"}`} title={formatCurrency(wrappedStats.balance, currency)}>
+                                        {wrappedStats.balance >= 0 ? "+" : ""}{formatCurrency(wrappedStats.balance, currency)}
+                                    </p>
+                                </div>
+                                <div className="p-4 rounded-xl bg-muted/50 border border-border">
+                                    <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Savings Rate</p>
+                                    <div className="flex items-center gap-2">
+                                        <p className="text-lg font-bold truncate">
+                                            {wrappedStats.savingsRate.toFixed(0)}%
+                                        </p>
+                                        {wrappedStats.savingsRate > 0 && <IconMoodHappy className="size-4 text-emerald-500" />}
+                                        {wrappedStats.savingsRate < 0 && <IconMoodSad className="size-4 text-rose-500" />}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {/* Top Categories */}
+                                <div className="space-y-4">
+                                    <h3 className="font-semibold flex items-center gap-2">
+                                        <IconTarget className="size-4 text-primary" />
+                                        Top Categories
+                                    </h3>
+                                    <div className="space-y-3">
+                                        {wrappedStats.top3Categories.map(({ category, amount }, index) => {
+                                            const catInfo = getCategoryInfo(category);
+                                            const percentage = wrappedStats.totalExpenses > 0 ? (amount / wrappedStats.totalExpenses) * 100 : 0;
+                                            return (
+                                                <div key={category} className="space-y-1">
+                                                    <div className="flex items-center justify-between text-sm">
+                                                        <span className="flex items-center gap-2">
+                                                            <span className="text-lg">{catInfo.icon}</span>
+                                                            <span className="font-medium">{catInfo.name}</span>
+                                                        </span>
+                                                        <span className="font-mono text-muted-foreground">{percentage.toFixed(0)}%</span>
+                                                    </div>
+                                                    <div
+                                                        className="h-2 bg-muted rounded-full overflow-hidden"
+                                                        role="progressbar"
+                                                        aria-valuenow={Math.round(percentage)}
+                                                        aria-valuemin={0}
+                                                        aria-valuemax={100}
+                                                        aria-label={`${catInfo.name} spending`}
+                                                    >
+                                                        <div
+                                                            className="h-full rounded-full bg-gradient-to-r from-rose-500 to-orange-500"
+                                                            style={{ width: `${percentage}%` }}
+                                                        />
+                                                    </div>
+                                                    <p className="text-xs text-right text-muted-foreground">
+                                                        {formatCurrency(amount, currency)}
+                                                    </p>
+                                                </div>
+                                            );
+                                        })}
+                                        {wrappedStats.top3Categories.length === 0 && (
+                                            <p className="text-sm text-muted-foreground italic">No expenses yet.</p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Fun Facts */}
+                                <div className="space-y-4">
+                                    <h3 className="font-semibold flex items-center gap-2">
+                                        <IconSparkles className="size-4 text-amber-500" />
+                                        Highlights
+                                    </h3>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        {wrappedStats.biggestExpense && (
+                                            <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
+                                                <p className="text-[10px] text-muted-foreground uppercase">Biggest Expense</p>
+                                                <p className="font-medium truncate mt-1" title={wrappedStats.biggestExpense.description}>
+                                                    {wrappedStats.biggestExpense.description}
+                                                </p>
+                                                <p className="text-sm font-bold text-rose-500">
+                                                    {formatCurrency(wrappedStats.biggestExpense.amount, currency)}
+                                                </p>
+                                            </div>
+                                        )}
+                                        {wrappedStats.mostFrequentCategory && (
+                                            <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
+                                                <p className="text-[10px] text-muted-foreground uppercase">Most Frequent</p>
+                                                <p className="font-medium truncate mt-1 flex items-center gap-1">
+                                                    <span>{getCategoryInfo(wrappedStats.mostFrequentCategory.category).icon}</span>
+                                                    {getCategoryInfo(wrappedStats.mostFrequentCategory.category).name}
+                                                </p>
+                                                <p className="text-sm text-muted-foreground">
+                                                    {wrappedStats.mostFrequentCategory.count} times
+                                                </p>
+                                            </div>
+                                        )}
+                                        {wrappedStats.biggestSpendingDay.amount > 0 && (
+                                            <div className="p-3 rounded-lg bg-muted/30 border border-border/50 col-span-1 sm:col-span-2">
+                                                <div className="flex items-center justify-between">
+                                                    <div>
+                                                        <p className="text-[10px] text-muted-foreground uppercase">Top Spending Day</p>
+                                                        <p className="font-medium mt-1">
+                                                            {wrappedStats.biggestSpendingDay.day}s
+                                                        </p>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <IconCalendar className="size-4 text-muted-foreground ml-auto mb-1" />
+                                                        <p className="text-sm font-bold text-muted-foreground">
+                                                            {formatCurrency(wrappedStats.biggestSpendingDay.amount, currency)}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <Button className="w-full" size="lg" onClick={() => setShowWrapped(false)}>
+                                Done
+                            </Button>
+                        </CardContent>
+                    </Card>
+                </div>
+            )}
 
             {/* Premium Pricing View - Full Page */}
             {showPricingView ? (
@@ -709,12 +1033,13 @@ function MoneyDrainPage() {
                         </Card>
 
                         {/* Add Button - Centered */}
-                        <div className="flex justify-center">
+                        <div className="flex justify-center gap-2">
                             <Tooltip content={showAddForm ? "Close" : "Add"}>
                                 <Button
                                     size="lg"
                                     onClick={() => {
                                         setShowAddForm(!showAddForm);
+                                        setShowQuickAdd(false);
                                         setIsDirty(false);
                                         setFormError(null);
                                     }}
@@ -724,7 +1049,65 @@ function MoneyDrainPage() {
                                     <IconPlus className={`size-5 transition-transform duration-200 motion-reduce:transition-none motion-reduce:transform-none ${showAddForm ? "rotate-45" : ""}`} aria-hidden="true" />
                                 </Button>
                             </Tooltip>
+                            {quickAddPresets.length > 0 && (
+                                <Tooltip content={showQuickAdd ? "Close Quick Add" : "Quick Add"}>
+                                    <Button
+                                        size="lg"
+                                        variant="outline"
+                                        onClick={() => {
+                                            setShowQuickAdd(!showQuickAdd);
+                                            setShowAddForm(false);
+                                        }}
+                                        className="size-10 p-0"
+                                        aria-label={showQuickAdd ? "Close quick add" : "Quick add"}
+                                    >
+                                        <IconBolt className={`size-5 transition-transform duration-200 motion-reduce:transition-none ${showQuickAdd ? "text-primary" : ""}`} aria-hidden="true" />
+                                    </Button>
+                                </Tooltip>
+                            )}
                         </div>
+
+                        {/* Quick Add Presets */}
+                        {showQuickAdd && quickAddPresets.length > 0 && (
+                            <Card className="border-primary/20 animate-in slide-in-from-top-2 duration-200 motion-reduce:animate-none motion-reduce:transition-none">
+                                <CardContent className="p-3">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-2 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                                            <IconBolt className="size-3" aria-hidden="true" />
+                                            <span>Quick Add</span>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {quickAddPresets.map(preset => (
+                                            <div key={preset.id} className="relative group">
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    onClick={() => handleQuickAdd(preset)}
+                                                    className="w-full justify-start text-left h-auto py-2 pr-8"
+                                                >
+                                                    <div className="flex flex-col items-start gap-0.5 min-w-0">
+                                                        <span className="text-xs font-medium truncate w-full">{preset.description}</span>
+                                                        <span className={`text-[10px] tabular-nums ${preset.type === "income" ? "text-emerald-500" : "text-rose-500"}`}>
+                                                            {preset.type === "income" ? "+" : "-"}{formatCurrency(preset.amount, currency)}
+                                                        </span>
+                                                    </div>
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => deletePreset(preset.id)}
+                                                    className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                    aria-label={`Delete ${preset.description} preset`}
+                                                >
+                                                    <IconX className="size-3" aria-hidden="true" />
+                                                </Button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        )}
 
                         {/* Add Transaction Form */}
                         {showAddForm && (
@@ -872,6 +1255,45 @@ function MoneyDrainPage() {
                                             )}
                                         </div>
 
+                                        {/* Tags */}
+                                        <div className="relative">
+                                            <IconTag className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" aria-hidden="true" />
+                                            <Input
+                                                placeholder="Tags… e.g. lunch, work"
+                                                value={formData.tags}
+                                                onChange={(e) => {
+                                                    setFormData({ ...formData, tags: e.target.value });
+                                                    setIsDirty(true);
+                                                }}
+                                                className="pl-7"
+                                                name="tags"
+                                                aria-label="Tags (comma separated)"
+                                                autoComplete="off"
+                                            />
+                                        </div>
+                                        {allTags.length > 0 && (
+                                            <div className="flex flex-wrap gap-1">
+                                                {allTags.slice(0, 8).map(tag => (
+                                                    <button
+                                                        key={tag}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            const currentTags = formData.tags.split(",").map(t => t.trim()).filter(Boolean);
+                                                            if (!currentTags.includes(tag)) {
+                                                                const newTags = [...currentTags, tag].join(", ");
+                                                                setFormData({ ...formData, tags: newTags });
+                                                                setIsDirty(true);
+                                                            }
+                                                        }}
+                                                        className="px-1.5 py-0.5 text-[10px] rounded bg-muted hover:bg-muted/80 text-muted-foreground"
+                                                        aria-label={`Add tag ${tag}`}
+                                                    >
+                                                        #{tag}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+
                                         {/* Add Custom Category Form */}
                                         {showAddCategory && (
                                             <div className="p-2 bg-muted/50 rounded-md space-y-2">
@@ -943,13 +1365,27 @@ function MoneyDrainPage() {
 
                                         {/* Actions - Only show when not adding custom category */}
                                         {!showAddCategory && (
-                                            <div className="grid grid-cols-2 gap-2">
-                                                <Button type="button" variant="outline" size="sm" onClick={() => { setShowAddForm(false); setEditingId(null); setIsDirty(false); setFormError(null); }}>
-                                                    Cancel
-                                                </Button>
-                                                <Button type="submit" size="sm" disabled={isSubmitting}>
-                                                    {isSubmitting ? "Saving…" : (editingId ? "Save" : "Add")}
-                                                </Button>
+                                            <div className="space-y-2">
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <Button type="button" variant="outline" size="sm" onClick={() => { setShowAddForm(false); setEditingId(null); setIsDirty(false); setFormError(null); }}>
+                                                        Cancel
+                                                    </Button>
+                                                    <Button type="submit" size="sm" disabled={isSubmitting}>
+                                                        {isSubmitting ? "Saving…" : (editingId ? "Save" : "Add")}
+                                                    </Button>
+                                                </div>
+                                                {!editingId && formData.description && formData.amount && (
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={saveAsPreset}
+                                                        className="w-full text-xs text-muted-foreground"
+                                                    >
+                                                        <IconBolt className="size-3 mr-1" aria-hidden="true" />
+                                                        Save as Quick Add
+                                                    </Button>
+                                                )}
                                             </div>
                                         )}
                                     </form>
@@ -1118,6 +1554,21 @@ function MoneyDrainPage() {
                                             </Button>
                                         </Tooltip>
 
+                                        {/* Monthly Wrapped Button */}
+                                        {filteredTransactions.length > 0 && (
+                                            <Tooltip content="Monthly Report">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => setShowWrapped(true)}
+                                                    className="h-6 px-2 text-muted-foreground hover:text-foreground"
+                                                    aria-label="View Monthly Report"
+                                                >
+                                                    <IconSparkles className="size-3" aria-hidden="true" />
+                                                </Button>
+                                            </Tooltip>
+                                        )}
+
                                         {/* Export Button */}
                                         {transactions.length > 0 && (
                                             <Tooltip content="Export CSV">
@@ -1125,13 +1576,14 @@ function MoneyDrainPage() {
                                                     variant="ghost"
                                                     size="sm"
                                                     onClick={() => {
-                                                        const headers = ["Date", "Description", "Category", "Type", "Amount"];
+                                                        const headers = ["Date", "Description", "Category", "Type", "Amount", "Tags"];
                                                         const rows = transactions.map((t: Transaction) => [
                                                             new Intl.DateTimeFormat(undefined).format(new Date(t.date)),
                                                             t.description,
                                                             t.category,
                                                             t.type,
-                                                            t.amount.toString()
+                                                            t.amount.toString(),
+                                                            (t.tags || []).join(";")
                                                         ]);
                                                         const csv = [headers, ...rows].map(row => row.join(",")).join("\n");
                                                         const blob = new Blob([csv], { type: "text/csv" });
@@ -1182,6 +1634,33 @@ function MoneyDrainPage() {
                                         )}
                                     </div>
                                 </div>
+
+                                {/* Search Bar */}
+                                <div className="relative mb-2">
+                                    <IconSearch className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" aria-hidden="true" />
+                                    <Input
+                                        type="search"
+                                        placeholder="Search transactions…"
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        className="pl-7 h-8 text-xs"
+                                        name="search"
+                                        aria-label="Search transactions"
+                                        autoComplete="off"
+                                    />
+                                    {searchQuery && (
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => setSearchQuery("")}
+                                            className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 p-0"
+                                            aria-label="Clear search"
+                                        >
+                                            <IconX className="size-3" aria-hidden="true" />
+                                        </Button>
+                                    )}
+                                </div>
+
                                 {recentTransactions.length === 0 ? (
                                     <div className="text-center py-6">
                                             <div className="size-10 rounded-full bg-muted mx-auto mb-2 flex items-center justify-center">
@@ -1282,7 +1761,21 @@ function TransactionItem({
             </div>
             <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium truncate">{transaction.description}</p>
-                <p className="text-[10px] text-muted-foreground">{formatDate(transaction.date)}</p>
+                <div className="flex items-center gap-1.5">
+                    <p className="text-[10px] text-muted-foreground">{formatDate(transaction.date)}</p>
+                    {transaction.tags && transaction.tags.length > 0 && (
+                        <div className="flex items-center gap-1">
+                            {transaction.tags.slice(0, 2).map(tag => (
+                                <span key={tag} className="px-1 py-0.5 text-[9px] rounded bg-muted text-muted-foreground">
+                                    #{tag}
+                                </span>
+                            ))}
+                            {transaction.tags.length > 2 && (
+                                <span className="text-[9px] text-muted-foreground">+{transaction.tags.length - 2}</span>
+                            )}
+                        </div>
+                    )}
+                </div>
             </div>
             <div className="flex items-center gap-1">
                 <p className={`text-xs font-semibold tabular-nums ${transaction.type === "income" ? "text-emerald-500" : "text-rose-500"}`}>
