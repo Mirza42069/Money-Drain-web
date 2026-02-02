@@ -123,21 +123,29 @@ export const defaultCategories: Category[] = [
   ...defaultIncomeCategories,
 ];
 
+// Cache formatters per currency (js-cache-function-results)
+const currencyFormatters = new Map<CurrencyType, Intl.NumberFormat>();
+
+function getCurrencyFormatter(currency: CurrencyType): Intl.NumberFormat {
+  let formatter = currencyFormatters.get(currency);
+  if (!formatter) {
+    const currencyInfo = currencies[currency];
+    formatter = new Intl.NumberFormat(currencyInfo.locale, {
+      style: "currency",
+      currency: currencyInfo.code,
+      minimumFractionDigits: currency === "JPY" ? 0 : 0,
+      maximumFractionDigits: currency === "JPY" ? 0 : 2,
+    });
+    currencyFormatters.set(currency, formatter);
+  }
+  return formatter;
+}
+
 export function formatCurrency(
   amount: number,
   currency: CurrencyType = "USD",
 ): string {
-  const currencyInfo = currencies[currency];
-
-  // For JPY don't show decimals
-  const options: Intl.NumberFormatOptions = {
-    style: "currency",
-    currency: currencyInfo.code,
-    minimumFractionDigits: currency === "JPY" ? 0 : 0,
-    maximumFractionDigits: currency === "JPY" ? 0 : 2,
-  };
-
-  return new Intl.NumberFormat(currencyInfo.locale, options).format(amount);
+  return getCurrencyFormatter(currency).format(amount);
 }
 
 export function formatDate(dateString: string): string {

@@ -2,7 +2,14 @@
 
 import { Suspense, useState, useMemo, useEffect, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { SignInButton, SignOutButton, useUser, useAuth, PricingTable, UserButton } from "@clerk/nextjs";
+import { SignInButton, SignOutButton, useUser, useAuth, UserButton } from "@clerk/nextjs";
+import dynamic from "next/dynamic";
+
+// Lazy load PricingTable - only needed when user clicks premium filter (bundle-dynamic-imports)
+const PricingTable = dynamic(
+    () => import("@clerk/nextjs").then(mod => ({ default: mod.PricingTable })),
+    { loading: () => <div className="h-64 animate-pulse motion-reduce:animate-none bg-muted rounded-lg" /> }
+);
 import {
     IconPlus,
     IconTrendingUp,
@@ -207,12 +214,18 @@ function MoneyDrainPage() {
     const { has, isLoaded } = useAuth();
     const hasPremiumAccess = isLoaded && (has?.({ plan: "premium" }) || has?.({ feature: "1_year_and_all_filter" }));
 
-    // Hydration-safe mounting state
+    // Hydration-safe mounting state (js-cache-storage: batch localStorage reads)
     useEffect(() => {
         const timer = requestAnimationFrame(() => {
-            setMounted(true);
-            // Load saved theme preference (default to dark)
+            // Batch all localStorage reads upfront
             const savedTheme = localStorage.getItem("money-drain-theme");
+            const savedCurrency = localStorage.getItem("money-drain-currency") as CurrencyType;
+            const savedPeriod = localStorage.getItem("money-drain-period") as FilterPeriod;
+            const savedPresets = localStorage.getItem("money-drain-quick-presets");
+
+            setMounted(true);
+
+            // Apply theme
             const prefersDark = savedTheme !== "light";
             setIsDarkMode(prefersDark);
             if (prefersDark) {
@@ -220,17 +233,14 @@ function MoneyDrainPage() {
             } else {
                 document.documentElement.classList.remove("dark");
             }
-            // Load saved preferences
-            const savedCurrency = localStorage.getItem("money-drain-currency") as CurrencyType;
-            const savedPeriod = localStorage.getItem("money-drain-period") as FilterPeriod;
+
+            // Apply preferences
             if (savedCurrency && currencyOrder.includes(savedCurrency)) {
                 setCurrency(savedCurrency);
             }
             if (savedPeriod && allPeriods.includes(savedPeriod)) {
                 setFilterPeriod(savedPeriod);
             }
-            // Load quick add presets
-            const savedPresets = localStorage.getItem("money-drain-quick-presets");
             if (savedPresets) {
                 try { setQuickAddPresets(JSON.parse(savedPresets)); } catch { /* ignore */ }
             }
@@ -350,49 +360,34 @@ function MoneyDrainPage() {
         return filtered;
     }, [transactions, filterPeriod, searchQuery]);
 
-    // Calculate totals based on filtered transactions
-    const balance = useMemo(() => {
-        return filteredTransactions.reduce((acc, t) => {
-            return t.type === "income" ? acc + t.amount : acc - t.amount;
-        }, 0);
-    }, [filteredTransactions]);
+    // Calculate all totals in a single pass (js-combine-iterations)
+    const { balance, income, expenses, expensesByCategory, incomeByCategory } = useMemo(() => {
+        let totalIncome = 0;
+        let totalExpenses = 0;
+        const expenseCategoryTotals: Record<string, number> = {};
+        const incomeCategoryTotals: Record<string, number> = {};
 
-    const income = useMemo(() => {
-        return filteredTransactions
-            .filter((t) => t.type === "income")
-            .reduce((acc, t) => acc + t.amount, 0);
-    }, [filteredTransactions]);
+        for (const t of filteredTransactions) {
+            if (t.type === "income") {
+                totalIncome += t.amount;
+                incomeCategoryTotals[t.category] = (incomeCategoryTotals[t.category] || 0) + t.amount;
+            } else {
+                totalExpenses += t.amount;
+                expenseCategoryTotals[t.category] = (expenseCategoryTotals[t.category] || 0) + t.amount;
+            }
+        }
 
-    const expenses = useMemo(() => {
-        return filteredTransactions
-            .filter((t) => t.type === "expense")
-            .reduce((acc, t) => acc + t.amount, 0);
-    }, [filteredTransactions]);
-
-    const expensesByCategory = useMemo(() => {
-        const expenseItems = filteredTransactions.filter((t) => t.type === "expense");
-        const categoryTotals: Record<string, number> = {};
-
-        expenseItems.forEach((t) => {
-            categoryTotals[t.category] = (categoryTotals[t.category] || 0) + t.amount;
-        });
-
-        return Object.entries(categoryTotals)
-            .map(([category, amount]) => ({ category, amount }))
-            .sort((a, b) => b.amount - a.amount);
-    }, [filteredTransactions]);
-
-    const incomeByCategory = useMemo(() => {
-        const incomeItems = filteredTransactions.filter((t) => t.type === "income");
-        const categoryTotals: Record<string, number> = {};
-
-        incomeItems.forEach((t) => {
-            categoryTotals[t.category] = (categoryTotals[t.category] || 0) + t.amount;
-        });
-
-        return Object.entries(categoryTotals)
-            .map(([category, amount]) => ({ category, amount }))
-            .sort((a, b) => b.amount - a.amount);
+        return {
+            balance: totalIncome - totalExpenses,
+            income: totalIncome,
+            expenses: totalExpenses,
+            expensesByCategory: Object.entries(expenseCategoryTotals)
+                .map(([category, amount]) => ({ category, amount }))
+                .sort((a, b) => b.amount - a.amount),
+            incomeByCategory: Object.entries(incomeCategoryTotals)
+                .map(([category, amount]) => ({ category, amount }))
+                .sort((a, b) => b.amount - a.amount),
+        };
     }, [filteredTransactions]);
 
     const recentTransactions = useMemo(() => {
@@ -511,12 +506,15 @@ function MoneyDrainPage() {
         setQuickAddPresets(prev => [...prev, newPreset]);
     };
 
-    // Delete a quick add preset
+    // Delete a quick add preset (rerender-functional-setstate)
     const deletePreset = (id: string) => {
-        setQuickAddPresets(prev => prev.filter(p => p.id !== id));
-        if (quickAddPresets.length <= 1) {
-            localStorage.removeItem("money-drain-quick-presets");
-        }
+        setQuickAddPresets(prev => {
+            const next = prev.filter(p => p.id !== id);
+            if (next.length === 0) {
+                localStorage.removeItem("money-drain-quick-presets");
+            }
+            return next;
+        });
     };
 
     // Wrapped stats
@@ -683,8 +681,8 @@ function MoneyDrainPage() {
                                         <p className="text-lg font-bold truncate">
                                             {wrappedStats.savingsRate.toFixed(0)}%
                                         </p>
-                                        {wrappedStats.savingsRate > 0 && <IconMoodHappy className="size-4 text-emerald-500" />}
-                                        {wrappedStats.savingsRate < 0 && <IconMoodSad className="size-4 text-rose-500" />}
+                                        {wrappedStats.savingsRate > 0 && <IconMoodHappy className="size-4 text-emerald-500" aria-hidden="true" />}
+                                        {wrappedStats.savingsRate < 0 && <IconMoodSad className="size-4 text-rose-500" aria-hidden="true" />}
                                     </div>
                                 </div>
                             </div>
@@ -693,7 +691,7 @@ function MoneyDrainPage() {
                                 {/* Top Categories */}
                                 <div className="space-y-4">
                                     <h3 className="font-semibold flex items-center gap-2">
-                                        <IconTarget className="size-4 text-primary" />
+                                        <IconTarget className="size-4 text-primary" aria-hidden="true" />
                                         Top Categories
                                     </h3>
                                     <div className="space-y-3">
@@ -737,7 +735,7 @@ function MoneyDrainPage() {
                                 {/* Fun Facts */}
                                 <div className="space-y-4">
                                     <h3 className="font-semibold flex items-center gap-2">
-                                        <IconSparkles className="size-4 text-amber-500" />
+                                        <IconSparkles className="size-4 text-amber-500" aria-hidden="true" />
                                         Highlights
                                     </h3>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -774,7 +772,7 @@ function MoneyDrainPage() {
                                                         </p>
                                                     </div>
                                                     <div className="text-right">
-                                                        <IconCalendar className="size-4 text-muted-foreground ml-auto mb-1" />
+                                                        <IconCalendar className="size-4 text-muted-foreground ml-auto mb-1" aria-hidden="true" />
                                                         <p className="text-sm font-bold text-muted-foreground">
                                                             {formatCurrency(wrappedStats.biggestSpendingDay.amount, currency)}
                                                         </p>
