@@ -29,7 +29,6 @@ import {
     IconCrown,
     IconChevronDown,
     IconSearch,
-    IconTag,
     IconBolt,
     IconX,
     IconSparkles,
@@ -194,7 +193,6 @@ function MoneyDrainPage() {
         type: "expense" as "income" | "expense",
         category: "other",
         date: getTodayInputValue(),
-        tags: "" as string,
     });
     const [showAddCategory, setShowAddCategory] = useState(false);
     const [newCategoryName, setNewCategoryName] = useState("");
@@ -353,8 +351,7 @@ function MoneyDrainPage() {
             const query = searchQuery.toLowerCase();
             filtered = filtered.filter(t =>
                 t.description.toLowerCase().includes(query) ||
-                t.category.toLowerCase().includes(query) ||
-                (t.tags || []).some(tag => tag.toLowerCase().includes(query))
+                t.category.toLowerCase().includes(query)
             );
         }
         return filtered;
@@ -421,26 +418,22 @@ function MoneyDrainPage() {
             if (editingId) {
                 // Update existing transaction
                 const isoDate = toLocalIsoString(formData.date);
-                const tagsArray = formData.tags.split(",").map(t => t.trim()).filter(Boolean);
                 await updateTransaction(editingId, {
                     description,
                     amount: parseFloat(formData.amount),
                     type: formData.type,
                     category: formData.category,
                     date: isoDate ?? undefined,
-                    tags: tagsArray,
                 });
                 setEditingId(null);
             } else {
                 // Add new transaction
-                const tagsArray = formData.tags.split(",").map(t => t.trim()).filter(Boolean);
                 await addTransaction({
                     description,
                     amount: parseFloat(formData.amount),
                     type: formData.type,
                     category: formData.category,
                     date: new Date().toISOString(),
-                    tags: tagsArray,
                 });
             }
         } finally {
@@ -453,7 +446,6 @@ function MoneyDrainPage() {
             type: "expense",
             category: "other",
             date: getTodayInputValue(),
-            tags: "",
         });
         setShowAddForm(false);
         setIsDirty(false);
@@ -466,7 +458,6 @@ function MoneyDrainPage() {
             type: transaction.type,
             category: transaction.category,
             date: toDateInputValue(transaction.date),
-            tags: (transaction.tags || []).join(", "),
         });
         setEditingId(transaction.id);
         setShowAddForm(true);
@@ -489,7 +480,6 @@ function MoneyDrainPage() {
             type: preset.type,
             category: preset.category,
             date: new Date().toISOString(),
-            tags: [],
         });
     };
 
@@ -582,13 +572,6 @@ function MoneyDrainPage() {
             balance,
         };
     }, [filteredTransactions, expenses, income, balance, expensesByCategory]);
-
-    // Get all unique tags from transactions
-    const allTags = useMemo(() => {
-        const tags = new Set<string>();
-        transactions.forEach(t => (t.tags || []).forEach(tag => tags.add(tag)));
-        return Array.from(tags).sort();
-    }, [transactions]);
 
     if (isLoading) {
         return (
@@ -1253,45 +1236,6 @@ function MoneyDrainPage() {
                                             )}
                                         </div>
 
-                                        {/* Tags */}
-                                        <div className="relative">
-                                            <IconTag className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" aria-hidden="true" />
-                                            <Input
-                                                placeholder="Tags… e.g. lunch, work"
-                                                value={formData.tags}
-                                                onChange={(e) => {
-                                                    setFormData({ ...formData, tags: e.target.value });
-                                                    setIsDirty(true);
-                                                }}
-                                                className="pl-7"
-                                                name="tags"
-                                                aria-label="Tags (comma separated)"
-                                                autoComplete="off"
-                                            />
-                                        </div>
-                                        {allTags.length > 0 && (
-                                            <div className="flex flex-wrap gap-1">
-                                                {allTags.slice(0, 8).map(tag => (
-                                                    <button
-                                                        key={tag}
-                                                        type="button"
-                                                        onClick={() => {
-                                                            const currentTags = formData.tags.split(",").map(t => t.trim()).filter(Boolean);
-                                                            if (!currentTags.includes(tag)) {
-                                                                const newTags = [...currentTags, tag].join(", ");
-                                                                setFormData({ ...formData, tags: newTags });
-                                                                setIsDirty(true);
-                                                            }
-                                                        }}
-                                                        className="px-1.5 py-0.5 text-[10px] rounded bg-muted hover:bg-muted/80 text-muted-foreground"
-                                                        aria-label={`Add tag ${tag}`}
-                                                    >
-                                                        #{tag}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        )}
-
                                         {/* Add Custom Category Form */}
                                         {showAddCategory && (
                                             <div className="p-2 bg-muted/50 rounded-md space-y-2">
@@ -1574,14 +1518,13 @@ function MoneyDrainPage() {
                                                     variant="ghost"
                                                     size="sm"
                                                     onClick={() => {
-                                                        const headers = ["Date", "Description", "Category", "Type", "Amount", "Tags"];
+                                                        const headers = ["Date", "Description", "Category", "Type", "Amount"];
                                                         const rows = transactions.map((t: Transaction) => [
                                                             new Intl.DateTimeFormat(undefined).format(new Date(t.date)),
                                                             t.description,
                                                             t.category,
                                                             t.type,
                                                             t.amount.toString(),
-                                                            (t.tags || []).join(";")
                                                         ]);
                                                         const csv = [headers, ...rows].map(row => row.join(",")).join("\n");
                                                         const blob = new Blob([csv], { type: "text/csv" });
@@ -1759,21 +1702,7 @@ function TransactionItem({
             </div>
             <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium truncate">{transaction.description}</p>
-                <div className="flex items-center gap-1.5">
-                    <p className="text-[10px] text-muted-foreground">{formatDate(transaction.date)}</p>
-                    {transaction.tags && transaction.tags.length > 0 && (
-                        <div className="flex items-center gap-1">
-                            {transaction.tags.slice(0, 2).map(tag => (
-                                <span key={tag} className="px-1 py-0.5 text-[9px] rounded bg-muted text-muted-foreground">
-                                    #{tag}
-                                </span>
-                            ))}
-                            {transaction.tags.length > 2 && (
-                                <span className="text-[9px] text-muted-foreground">+{transaction.tags.length - 2}</span>
-                            )}
-                        </div>
-                    )}
-                </div>
+                <p className="text-[10px] text-muted-foreground">{formatDate(transaction.date)}</p>
             </div>
             <div className="flex items-center gap-1">
                 <p className={`text-xs font-semibold tabular-nums ${transaction.type === "income" ? "text-emerald-500" : "text-rose-500"}`}>
