@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState, useEffect } from "react";
-import { useQuery, useMutation, Authenticated, Unauthenticated } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { useAuth } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
@@ -25,48 +25,80 @@ export interface Transaction {
 
 const CUSTOM_CATEGORIES_KEY = "money-drain-custom-categories";
 const getStorageKey = (account: number) => `money-drain-transactions-account-${account}`;
+const LOCAL_ACCOUNTS = [1, 2, 3] as const;
 
 interface CustomCategoriesLocal {
     expense: Category[];
     income: Category[];
 }
 
+const emptyCustomCategories = (): CustomCategoriesLocal => ({ expense: [], income: [] });
+
+const parseStoredTransactions = (value: string | null): Transaction[] => {
+    if (!value) return [];
+    try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? (parsed as Transaction[]) : [];
+    } catch {
+        return [];
+    }
+};
+
+const parseStoredCustomCategories = (value: string | null): CustomCategoriesLocal => {
+    if (!value) return emptyCustomCategories();
+    try {
+        const parsed = JSON.parse(value) as Partial<CustomCategoriesLocal>;
+        return {
+            expense: Array.isArray(parsed.expense) ? parsed.expense : [],
+            income: Array.isArray(parsed.income) ? parsed.income : [],
+        };
+    } catch {
+        return emptyCustomCategories();
+    }
+};
+
 export function useTransactions(account: number = 1) {
     const { isSignedIn } = useAuth();
 
     // === LOCAL STATE (always called) ===
-    const [localTransactions, setLocalTransactions] = useState<Transaction[]>([]);
-    const [localCustomCategories, setLocalCustomCategories] = useState<CustomCategoriesLocal>({ expense: [], income: [] });
-    const [localIsLoading, setLocalIsLoading] = useState(true);
+    const [localTransactionsByAccount, setLocalTransactionsByAccount] = useState<Record<number, Transaction[]>>({});
+    const [localCustomCategories, setLocalCustomCategories] = useState<CustomCategoriesLocal>(emptyCustomCategories);
+    const [localIsHydrated, setLocalIsHydrated] = useState(false);
 
-    // Load from localStorage
     useEffect(() => {
-        if (isSignedIn) return; // Skip if signed in
-        setLocalIsLoading(true);
-        const storageKey = getStorageKey(account);
-        const stored = localStorage.getItem(storageKey);
-        if (stored) {
-            try { setLocalTransactions(JSON.parse(stored)); } catch { setLocalTransactions([]); }
-        } else {
-            setLocalTransactions([]);
-        }
-        const storedCategories = localStorage.getItem(CUSTOM_CATEGORIES_KEY);
-        if (storedCategories) {
-            try { setLocalCustomCategories(JSON.parse(storedCategories)); } catch { /* ignore */ }
-        }
-        setLocalIsLoading(false);
-    }, [account, isSignedIn]);
+        if (isSignedIn) return;
+
+        const frame = requestAnimationFrame(() => {
+            const nextTransactionsByAccount: Record<number, Transaction[]> = {};
+            LOCAL_ACCOUNTS.forEach((localAccount) => {
+                nextTransactionsByAccount[localAccount] = parseStoredTransactions(
+                    localStorage.getItem(getStorageKey(localAccount))
+                );
+            });
+
+            setLocalTransactionsByAccount(nextTransactionsByAccount);
+            setLocalCustomCategories(parseStoredCustomCategories(localStorage.getItem(CUSTOM_CATEGORIES_KEY)));
+            setLocalIsHydrated(true);
+        });
+
+        return () => cancelAnimationFrame(frame);
+    }, [isSignedIn]);
+
+    const localTransactions = useMemo(
+        () => localTransactionsByAccount[account] ?? [],
+        [localTransactionsByAccount, account]
+    );
 
     // Save to localStorage
     useEffect(() => {
-        if (isSignedIn || localIsLoading) return;
+        if (isSignedIn || !localIsHydrated) return;
         localStorage.setItem(getStorageKey(account), JSON.stringify(localTransactions));
-    }, [localTransactions, localIsLoading, account, isSignedIn]);
+    }, [account, isSignedIn, localIsHydrated, localTransactions]);
 
     useEffect(() => {
-        if (isSignedIn || localIsLoading) return;
+        if (isSignedIn || !localIsHydrated) return;
         localStorage.setItem(CUSTOM_CATEGORIES_KEY, JSON.stringify(localCustomCategories));
-    }, [localCustomCategories, localIsLoading, isSignedIn]);
+    }, [localCustomCategories, isSignedIn, localIsHydrated]);
 
     // === CONVEX STATE (always called, but skip query when not signed in) ===
     const transactionsData = useQuery(api.transactions.list, isSignedIn ? { account } : "skip");
@@ -111,7 +143,7 @@ export function useTransactions(account: number = 1) {
 
     const isLoading = isSignedIn
         ? transactionsData === undefined || customCategoriesData === undefined
-        : localIsLoading;
+        : !localIsHydrated;
 
     // === CALLBACKS ===
     const generateId = useCallback(() => Math.random().toString(36).substring(2, 9), []);
@@ -162,7 +194,10 @@ export function useTransactions(account: number = 1) {
                 });
             } else {
                 const newTransaction: Transaction = { ...transaction, id: generateId() };
-                setLocalTransactions((prev) => [newTransaction, ...prev]);
+                setLocalTransactionsByAccount((prev) => ({
+                    ...prev,
+                    [account]: [newTransaction, ...(prev[account] || [])],
+                }));
                 return newTransaction;
             }
         },
@@ -174,10 +209,13 @@ export function useTransactions(account: number = 1) {
             if (isSignedIn) {
                 await removeTransaction({ id: id as Id<"transactions"> });
             } else {
-                setLocalTransactions((prev) => prev.filter((t) => t.id !== id));
+                setLocalTransactionsByAccount((prev) => ({
+                    ...prev,
+                    [account]: (prev[account] || []).filter((t) => t.id !== id),
+                }));
             }
         },
-        [isSignedIn, removeTransaction]
+        [isSignedIn, removeTransaction, account]
     );
 
     const updateTransaction = useCallback(
@@ -192,10 +230,13 @@ export function useTransactions(account: number = 1) {
                     date: updates.date,
                 });
             } else {
-                setLocalTransactions((prev) => prev.map((t) => (t.id === id ? { ...t, ...updates } : t)));
+                setLocalTransactionsByAccount((prev) => ({
+                    ...prev,
+                    [account]: (prev[account] || []).map((t) => (t.id === id ? { ...t, ...updates } : t)),
+                }));
             }
         },
-        [isSignedIn, updateTransactionMutation]
+        [isSignedIn, updateTransactionMutation, account]
     );
 
     const convertAllTransactions = useCallback(
@@ -208,9 +249,13 @@ export function useTransactions(account: number = 1) {
                     toRate: exchangeRates[toCurrency],
                 });
             } else {
-                setLocalTransactions((prev) =>
-                    prev.map((t) => ({ ...t, amount: convertCurrency(t.amount, fromCurrency, toCurrency) }))
-                );
+                setLocalTransactionsByAccount((prev) => ({
+                    ...prev,
+                    [account]: (prev[account] || []).map((t) => ({
+                        ...t,
+                        amount: convertCurrency(t.amount, fromCurrency, toCurrency),
+                    })),
+                }));
             }
         },
         [isSignedIn, convertTransactionsMutation, account]
@@ -220,7 +265,10 @@ export function useTransactions(account: number = 1) {
         if (isSignedIn) {
             await clearTransactions({ account });
         } else {
-            setLocalTransactions([]);
+            setLocalTransactionsByAccount((prev) => ({
+                ...prev,
+                [account]: [],
+            }));
         }
     }, [isSignedIn, clearTransactions, account]);
 

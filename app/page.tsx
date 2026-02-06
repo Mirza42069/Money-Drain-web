@@ -22,7 +22,6 @@ import {
     IconClock,
     IconCoin,
     IconBuildingBank,
-    IconDownload,
     IconSun,
     IconMoon,
     IconLock,
@@ -32,10 +31,6 @@ import {
     IconBolt,
     IconX,
     IconSparkles,
-    IconCalendar,
-    IconTarget,
-    IconMoodHappy,
-    IconMoodSad,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -414,13 +409,17 @@ function MoneyDrainPage() {
         const description = formData.description.trim() ||
             (formData.type === "income" ? "Income" : getCategoryInfo(formData.category).name);
 
+        // Parse amount: strip IDR thousands separator (.) before parsing
+        const amountStr = currency === "IDR" ? formData.amount.replace(/\./g, "") : formData.amount;
+        const amount = parseFloat(amountStr);
+
         try {
             if (editingId) {
                 // Update existing transaction
                 const isoDate = toLocalIsoString(formData.date);
                 await updateTransaction(editingId, {
                     description,
-                    amount: parseFloat(formData.amount),
+                    amount,
                     type: formData.type,
                     category: formData.category,
                     date: isoDate ?? undefined,
@@ -430,7 +429,7 @@ function MoneyDrainPage() {
                 // Add new transaction
                 await addTransaction({
                     description,
-                    amount: parseFloat(formData.amount),
+                    amount,
                     type: formData.type,
                     category: formData.category,
                     date: new Date().toISOString(),
@@ -452,9 +451,21 @@ function MoneyDrainPage() {
     };
 
     const startEdit = (transaction: Transaction) => {
+        // Format amount for display based on currency
+        let displayAmount: string;
+        if (currency === "IDR") {
+            // IDR: format with . as thousands separator
+            displayAmount = transaction.amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+        } else if (currency === "USD") {
+            // USD: show with 2 decimal places
+            displayAmount = transaction.amount.toFixed(2);
+        } else {
+            // JPY: plain number
+            displayAmount = transaction.amount.toString();
+        }
         setFormData({
             description: transaction.description,
-            amount: transaction.amount.toString(),
+            amount: displayAmount,
             type: transaction.type,
             category: transaction.category,
             date: toDateInputValue(transaction.date),
@@ -486,10 +497,12 @@ function MoneyDrainPage() {
     // Save current form as quick add preset
     const saveAsPreset = () => {
         if (!formData.description || !formData.amount) return;
+        // Parse amount: strip IDR thousands separator (.) before parsing
+        const amountStr = currency === "IDR" ? formData.amount.replace(/\./g, "") : formData.amount;
         const newPreset = {
             id: Math.random().toString(36).substring(2, 9),
             description: formData.description,
-            amount: parseFloat(formData.amount),
+            amount: parseFloat(amountStr),
             category: formData.category,
             type: formData.type,
         };
@@ -507,12 +520,56 @@ function MoneyDrainPage() {
         });
     };
 
+    const downloadFile = (content: string, mimeType: string, filename: string) => {
+        const blob = new Blob([content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    const getReportFilename = (extension: "csv" | "json") => {
+        const date = new Date().toISOString().split("T")[0];
+        return `money-drain-report-account${selectedAccount}-${filterPeriod}-${date}.${extension}`;
+    };
+
+    const exportReportAsCsv = () => {
+        const headers = ["Date", "Description", "Category", "Type", "Amount"];
+        const escapeCsv = (value: string) => `"${value.replace(/"/g, '""')}"`;
+        const rows = filteredTransactions.map((t: Transaction) => [
+            new Intl.DateTimeFormat(undefined).format(new Date(t.date)),
+            t.description,
+            t.category,
+            t.type,
+            t.amount.toString(),
+        ]);
+        const csv = [headers, ...rows]
+            .map((row) => row.map((cell) => escapeCsv(String(cell))).join(","))
+            .join("\n");
+
+        downloadFile(csv, "text/csv;charset=utf-8;", getReportFilename("csv"));
+    };
+
+    const exportReportAsJson = () => {
+        const reportData = {
+            account: selectedAccount,
+            period: filterPeriod,
+            periodLabel: periodLabels[filterPeriod],
+            currency,
+            exportedAt: new Date().toISOString(),
+            transactions: filteredTransactions,
+        };
+
+        downloadFile(JSON.stringify(reportData, null, 2), "application/json;charset=utf-8;", getReportFilename("json"));
+    };
+
     // Wrapped stats
     const wrappedStats = useMemo(() => {
         if (filteredTransactions.length === 0) return null;
 
         const expenseTransactions = filteredTransactions.filter(t => t.type === "expense");
-        const incomeTransactions = filteredTransactions.filter(t => t.type === "income");
 
         // Biggest expense
         const biggestExpense = expenseTransactions.length > 0
@@ -613,163 +670,182 @@ function MoneyDrainPage() {
                 </AlertDialogContent>
             </AlertDialog>
 
-            {/* Monthly Wrapped View - Compact Dashboard */}
+            {/* Monthly Report View - Minimal and digestible */}
             {showWrapped && wrappedStats && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-sm p-4 animate-in fade-in duration-200 motion-reduce:animate-none">
-                    <Card className="w-full max-w-4xl max-h-[90vh] overflow-y-auto overscroll-contain shadow-2xl border-primary/20">
-                        <CardContent className="p-6 space-y-6">
-                            {/* Header */}
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <h2 className="text-2xl font-bold bg-gradient-to-r from-primary to-emerald-500 bg-clip-text text-transparent">
-                                        Your {periodLabels[filterPeriod]} Wrapped
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/85 backdrop-blur-sm p-3 sm:p-5 animate-in fade-in duration-200 motion-reduce:animate-none">
+                    <Card className="w-full max-w-3xl max-h-[90vh] overflow-y-auto overscroll-contain border-border/80 shadow-lg">
+                        <CardContent className="p-4 sm:p-6 space-y-5">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="space-y-1">
+                                    <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Monthly Report</p>
+                                    <h2 className="text-xl sm:text-2xl font-semibold text-balance">
+                                        {periodLabels[filterPeriod]} overview
                                     </h2>
-                                    <p className="text-sm text-muted-foreground">
-                                        {wrappedStats.totalTransactions} transactions found
+                                    <p className="text-xs sm:text-sm text-muted-foreground">
+                                        {wrappedStats.totalTransactions} transactions in this period
                                     </p>
                                 </div>
                                 <Button
                                     variant="ghost"
                                     size="icon"
                                     onClick={() => setShowWrapped(false)}
-                                    aria-label="Close"
+                                    aria-label="Close report"
+                                    className="shrink-0"
                                 >
-                                    <IconX className="size-5" />
+                                    <IconX className="size-4" aria-hidden="true" />
                                 </Button>
                             </div>
 
-                            {/* Summary Grid */}
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-                                    <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Income</p>
-                                    <p className="text-lg font-bold text-emerald-500 truncate" title={formatCurrency(wrappedStats.totalIncome, currency)}>
+                            <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-4">
+                                <div className="rounded-xl border border-border/70 bg-card/70 p-3 sm:p-4 space-y-1">
+                                    <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Income</p>
+                                    <p className="text-sm sm:text-base font-semibold text-emerald-500 truncate" title={formatCurrency(wrappedStats.totalIncome, currency)}>
                                         {formatCurrency(wrappedStats.totalIncome, currency)}
                                     </p>
                                 </div>
-                                <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20">
-                                    <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Expenses</p>
-                                    <p className="text-lg font-bold text-rose-500 truncate" title={formatCurrency(wrappedStats.totalExpenses, currency)}>
+                                <div className="rounded-xl border border-border/70 bg-card/70 p-3 sm:p-4 space-y-1">
+                                    <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Expenses</p>
+                                    <p className="text-sm sm:text-base font-semibold text-rose-500 truncate" title={formatCurrency(wrappedStats.totalExpenses, currency)}>
                                         {formatCurrency(wrappedStats.totalExpenses, currency)}
                                     </p>
                                 </div>
-                                <div className="p-4 rounded-xl bg-primary/10 border border-primary/20">
-                                    <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Balance</p>
-                                    <p className={`text-lg font-bold truncate ${wrappedStats.balance >= 0 ? "text-primary" : "text-destructive"}`} title={formatCurrency(wrappedStats.balance, currency)}>
+                                <div className="rounded-xl border border-border/70 bg-card/70 p-3 sm:p-4 space-y-1">
+                                    <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Balance</p>
+                                    <p className={`text-sm sm:text-base font-semibold truncate ${wrappedStats.balance >= 0 ? "text-primary" : "text-destructive"}`} title={formatCurrency(wrappedStats.balance, currency)}>
                                         {wrappedStats.balance >= 0 ? "+" : ""}{formatCurrency(wrappedStats.balance, currency)}
                                     </p>
                                 </div>
-                                <div className="p-4 rounded-xl bg-muted/50 border border-border">
-                                    <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Savings Rate</p>
-                                    <div className="flex items-center gap-2">
-                                        <p className="text-lg font-bold truncate">
-                                            {wrappedStats.savingsRate.toFixed(0)}%
-                                        </p>
-                                        {wrappedStats.savingsRate > 0 && <IconMoodHappy className="size-4 text-emerald-500" aria-hidden="true" />}
-                                        {wrappedStats.savingsRate < 0 && <IconMoodSad className="size-4 text-rose-500" aria-hidden="true" />}
-                                    </div>
+                                <div className="rounded-xl border border-border/70 bg-card/70 p-3 sm:p-4 space-y-1">
+                                    <p className="text-[11px] text-muted-foreground uppercase tracking-wide">Savings Rate</p>
+                                    <p className="text-sm sm:text-base font-semibold tabular-nums">
+                                        {wrappedStats.savingsRate.toFixed(0)}%
+                                    </p>
+                                    <p className={`text-[11px] ${wrappedStats.savingsRate >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
+                                        {wrappedStats.savingsRate >= 0 ? "Within budget" : "Over budget"}
+                                    </p>
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {/* Top Categories */}
-                                <div className="space-y-4">
-                                    <h3 className="font-semibold flex items-center gap-2">
-                                        <IconTarget className="size-4 text-primary" aria-hidden="true" />
-                                        Top Categories
-                                    </h3>
+                            <div className="grid gap-3 md:grid-cols-[1.2fr_0.8fr]">
+                                <section className="rounded-xl border border-border/70 bg-card/70 p-4 space-y-3">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <h3 className="text-sm font-semibold">Top Categories</h3>
+                                        <span className="text-[11px] text-muted-foreground">By expense share</span>
+                                    </div>
                                     <div className="space-y-3">
                                         {wrappedStats.top3Categories.map(({ category, amount }, index) => {
                                             const catInfo = getCategoryInfo(category);
                                             const percentage = wrappedStats.totalExpenses > 0 ? (amount / wrappedStats.totalExpenses) * 100 : 0;
+
                                             return (
-                                                <div key={category} className="space-y-1">
-                                                    <div className="flex items-center justify-between text-sm">
-                                                        <span className="flex items-center gap-2">
-                                                            <span className="text-lg">{catInfo.icon}</span>
-                                                            <span className="font-medium">{catInfo.name}</span>
-                                                        </span>
-                                                        <span className="font-mono text-muted-foreground">{percentage.toFixed(0)}%</span>
+                                                <div key={category} className="space-y-1.5">
+                                                    <div className="flex items-center justify-between gap-2 text-sm">
+                                                        <div className="flex items-center gap-2 min-w-0">
+                                                            <span className="inline-flex size-5 items-center justify-center rounded-full bg-muted text-[10px] font-medium text-muted-foreground">
+                                                                {index + 1}
+                                                            </span>
+                                                            <span className="text-base leading-none" aria-hidden="true">{catInfo.icon}</span>
+                                                            <span className="truncate font-medium">{catInfo.name}</span>
+                                                        </div>
+                                                        <div className="text-right shrink-0">
+                                                            <p className="font-medium tabular-nums">{formatCurrency(amount, currency)}</p>
+                                                            <p className="text-[11px] text-muted-foreground">{percentage.toFixed(0)}%</p>
+                                                        </div>
                                                     </div>
                                                     <div
-                                                        className="h-2 bg-muted rounded-full overflow-hidden"
+                                                        className="h-1.5 rounded-full bg-muted overflow-hidden"
                                                         role="progressbar"
                                                         aria-valuenow={Math.round(percentage)}
                                                         aria-valuemin={0}
                                                         aria-valuemax={100}
-                                                        aria-label={`${catInfo.name} spending`}
+                                                        aria-label={`${catInfo.name} spending share`}
                                                     >
                                                         <div
-                                                            className="h-full rounded-full bg-gradient-to-r from-rose-500 to-orange-500"
+                                                            className="h-full rounded-full bg-foreground/70"
                                                             style={{ width: `${percentage}%` }}
                                                         />
                                                     </div>
-                                                    <p className="text-xs text-right text-muted-foreground">
-                                                        {formatCurrency(amount, currency)}
-                                                    </p>
                                                 </div>
                                             );
                                         })}
                                         {wrappedStats.top3Categories.length === 0 && (
-                                            <p className="text-sm text-muted-foreground italic">No expenses yet.</p>
+                                            <p className="text-sm text-muted-foreground">No expense transactions in this period.</p>
                                         )}
                                     </div>
-                                </div>
+                                </section>
 
-                                {/* Fun Facts */}
-                                <div className="space-y-4">
-                                    <h3 className="font-semibold flex items-center gap-2">
-                                        <IconSparkles className="size-4 text-amber-500" aria-hidden="true" />
-                                        Highlights
-                                    </h3>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        {wrappedStats.biggestExpense && (
-                                            <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
-                                                <p className="text-[10px] text-muted-foreground uppercase">Biggest Expense</p>
-                                                <p className="font-medium truncate mt-1" title={wrappedStats.biggestExpense.description}>
-                                                    {wrappedStats.biggestExpense.description}
-                                                </p>
-                                                <p className="text-sm font-bold text-rose-500">
-                                                    {formatCurrency(wrappedStats.biggestExpense.amount, currency)}
-                                                </p>
-                                            </div>
-                                        )}
-                                        {wrappedStats.mostFrequentCategory && (
-                                            <div className="p-3 rounded-lg bg-muted/30 border border-border/50">
-                                                <p className="text-[10px] text-muted-foreground uppercase">Most Frequent</p>
-                                                <p className="font-medium truncate mt-1 flex items-center gap-1">
-                                                    <span>{getCategoryInfo(wrappedStats.mostFrequentCategory.category).icon}</span>
-                                                    {getCategoryInfo(wrappedStats.mostFrequentCategory.category).name}
-                                                </p>
-                                                <p className="text-sm text-muted-foreground">
-                                                    {wrappedStats.mostFrequentCategory.count} times
-                                                </p>
-                                            </div>
-                                        )}
-                                        {wrappedStats.biggestSpendingDay.amount > 0 && (
-                                            <div className="p-3 rounded-lg bg-muted/30 border border-border/50 col-span-1 sm:col-span-2">
-                                                <div className="flex items-center justify-between">
-                                                    <div>
-                                                        <p className="text-[10px] text-muted-foreground uppercase">Top Spending Day</p>
-                                                        <p className="font-medium mt-1">
-                                                            {wrappedStats.biggestSpendingDay.day}s
+                                <section className="rounded-xl border border-border/70 bg-card/70 p-4 space-y-3">
+                                    <h3 className="text-sm font-semibold">Highlights</h3>
+                                    <dl className="space-y-2 text-sm">
+                                        <div className="rounded-lg bg-muted/40 px-3 py-2 space-y-1">
+                                            <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Biggest Expense</dt>
+                                            <dd className="font-medium">
+                                                {wrappedStats.biggestExpense ? (
+                                                    <>
+                                                        <p className="truncate" title={wrappedStats.biggestExpense.description}>{wrappedStats.biggestExpense.description}</p>
+                                                        <p className="text-rose-500">{formatCurrency(wrappedStats.biggestExpense.amount, currency)}</p>
+                                                    </>
+                                                ) : (
+                                                    <p className="text-muted-foreground">No expense data</p>
+                                                )}
+                                            </dd>
+                                        </div>
+
+                                        <div className="rounded-lg bg-muted/40 px-3 py-2 space-y-1">
+                                            <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Most Frequent Category</dt>
+                                            <dd className="font-medium">
+                                                {wrappedStats.mostFrequentCategory ? (
+                                                    <>
+                                                        <p className="truncate" title={getCategoryInfo(wrappedStats.mostFrequentCategory.category).name}>
+                                                            {getCategoryInfo(wrappedStats.mostFrequentCategory.category).icon} {getCategoryInfo(wrappedStats.mostFrequentCategory.category).name}
                                                         </p>
-                                                    </div>
-                                                    <div className="text-right">
-                                                        <IconCalendar className="size-4 text-muted-foreground ml-auto mb-1" aria-hidden="true" />
-                                                        <p className="text-sm font-bold text-muted-foreground">
-                                                            {formatCurrency(wrappedStats.biggestSpendingDay.amount, currency)}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
+                                                        <p className="text-muted-foreground text-xs">{wrappedStats.mostFrequentCategory.count} entries</p>
+                                                    </>
+                                                ) : (
+                                                    <p className="text-muted-foreground">No category trend yet</p>
+                                                )}
+                                            </dd>
+                                        </div>
+
+                                        <div className="rounded-lg bg-muted/40 px-3 py-2 space-y-1">
+                                            <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Top Spending Day</dt>
+                                            <dd className="font-medium">
+                                                {wrappedStats.biggestSpendingDay.amount > 0 ? (
+                                                    <>
+                                                        <p>{wrappedStats.biggestSpendingDay.day}</p>
+                                                        <p className="text-muted-foreground text-xs">{formatCurrency(wrappedStats.biggestSpendingDay.amount, currency)}</p>
+                                                    </>
+                                                ) : (
+                                                    <p className="text-muted-foreground">No day trend yet</p>
+                                                )}
+                                            </dd>
+                                        </div>
+
+                                        <div className="rounded-lg bg-muted/40 px-3 py-2 space-y-1">
+                                            <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">Average Expense</dt>
+                                            <dd className="font-medium">
+                                                {wrappedStats.totalExpenses > 0
+                                                    ? formatCurrency(wrappedStats.avgExpense, currency)
+                                                    : <span className="text-muted-foreground">No expense data</span>}
+                                            </dd>
+                                        </div>
+                                    </dl>
+                                </section>
                             </div>
 
-                            <Button className="w-full" size="lg" onClick={() => setShowWrapped(false)}>
-                                Done
-                            </Button>
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="flex items-center gap-2">
+                                    <Button variant="outline" size="sm" onClick={exportReportAsCsv} aria-label="Export report as CSV">
+                                        Export CSV
+                                    </Button>
+                                    <Button variant="outline" size="sm" onClick={exportReportAsJson} aria-label="Export report as JSON">
+                                        Export JSON
+                                    </Button>
+                                </div>
+                                <Button variant="outline" className="min-w-32" onClick={() => setShowWrapped(false)}>
+                                    Close report
+                                </Button>
+                            </div>
                         </CardContent>
                     </Card>
                 </div>
@@ -1137,25 +1213,37 @@ function MoneyDrainPage() {
                                                 }}
                                             />
                                             <Input
-                                                type="number"
+                                                type="text"
                                                 inputMode="decimal"
-                                                step="0.01"
-                                                placeholder="Amount… e.g. 12.50"
+                                                placeholder={currency === "USD" ? "Amount… e.g. 12.50" : currency === "IDR" ? "Amount… e.g. 50.000" : "Amount… e.g. 50000"}
                                                 name="amount"
                                                 aria-label="Amount"
                                                 autoComplete="off"
                                                 ref={amountInputRef}
                                                 value={formData.amount}
                                                 onChange={(e) => {
-                                                    // Remove all non-digit characters except decimal point
-                                                    const raw = e.target.value.replace(/[^0-9.]/g, "");
-                                                    // Ensure only one decimal point
-                                                    const parts = raw.split(".");
-                                                    const cleaned = parts.length > 2
-                                                        ? parts[0] + "." + parts.slice(1).join("")
-                                                        : raw;
-                                                    setFormData({ ...formData, amount: cleaned });
-                                                    if (cleaned) setFormError(null);
+                                                    // Strip non-digits
+                                                    const digits = e.target.value.replace(/\D/g, "");
+                                                    if (!digits) {
+                                                        setFormData({ ...formData, amount: "" });
+                                                        return;
+                                                    }
+                                                    if (currency === "IDR") {
+                                                        // IDR: format with . as thousands separator
+                                                        const num = digits.replace(/^0+/, "") || "0";
+                                                        const formatted = num.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+                                                        setFormData({ ...formData, amount: formatted });
+                                                    } else if (currency === "JPY") {
+                                                        // JPY: whole numbers only, no separator
+                                                        const cleaned = digits.replace(/^0+/, "") || "0";
+                                                        setFormData({ ...formData, amount: cleaned });
+                                                    } else {
+                                                        // USD: cents-first formatting (auto decimal 2 places from right)
+                                                        const cents = parseInt(digits, 10);
+                                                        const formatted = (cents / 100).toFixed(2);
+                                                        setFormData({ ...formData, amount: formatted });
+                                                    }
+                                                    setFormError(null);
                                                     setIsDirty(true);
                                                 }}
                                             />
@@ -1507,38 +1595,6 @@ function MoneyDrainPage() {
                                                     aria-label="View Monthly Report"
                                                 >
                                                     <IconSparkles className="size-3" aria-hidden="true" />
-                                                </Button>
-                                            </Tooltip>
-                                        )}
-
-                                        {/* Export Button */}
-                                        {transactions.length > 0 && (
-                                            <Tooltip content="Export CSV">
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={() => {
-                                                        const headers = ["Date", "Description", "Category", "Type", "Amount"];
-                                                        const rows = transactions.map((t: Transaction) => [
-                                                            new Intl.DateTimeFormat(undefined).format(new Date(t.date)),
-                                                            t.description,
-                                                            t.category,
-                                                            t.type,
-                                                            t.amount.toString(),
-                                                        ]);
-                                                        const csv = [headers, ...rows].map(row => row.join(",")).join("\n");
-                                                        const blob = new Blob([csv], { type: "text/csv" });
-                                                        const url = URL.createObjectURL(blob);
-                                                        const a = document.createElement("a");
-                                                        a.href = url;
-                                                        a.download = `money-drain-account${selectedAccount}-${new Date().toISOString().split("T")[0]}.csv`;
-                                                        a.click();
-                                                        URL.revokeObjectURL(url);
-                                                    }}
-                                                    className="h-6 px-2 text-muted-foreground hover:text-foreground"
-                                                    aria-label="Export CSV"
-                                                >
-                                                    <IconDownload className="size-3" aria-hidden="true" />
                                                 </Button>
                                             </Tooltip>
                                         )}
